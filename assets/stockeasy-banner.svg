@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+  <title id="title">StockEasy — stock management, made simple</title>
+  <desc id="desc">A clean illustrated workflow: Purchase Order, Goods Received Note, and Stock Updated.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#102C32"/><stop offset=".58" stop-color="#143B3F"/><stop offset="1" stop-color="#1D4E4C"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#93E1BD"/><stop offset="1" stop-color="#48BF94"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-40%" width="170%" height="190%"><feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#021619" flood-opacity=".28"/></filter>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#C5F7DF" opacity=".16"/></pattern>
+  </defs>
+  <rect width="1280" height="420" rx="24" fill="url(#bg)"/>
+  <circle cx="1175" cy="0" r="340" fill="#60CEAD" opacity=".07"/>
+  <circle cx="530" cy="438" r="250" fill="#8BE6C5" opacity=".06"/>
+  <rect x="795" y="0" width="485" height="420" fill="url(#dots)"/>
+  <g transform="translate(64 56)">
+    <rect width="58" height="58" rx="17" fill="url(#mint)"/>
+    <g fill="none" stroke="#103530" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M15 22 29 14 43 22 29 30Z"/><path d="M15 22v16l14 8 14-8V22"/><path d="M29 30v16"/>
+    </g>
+  </g>
+  <text x="139" y="96" font-family="Inter,Manrope,Arial,sans-serif" font-size="29" font-weight="750" fill="#F5FFF9" letter-spacing="-.7">StockEasy</text>
+  <text x="65" y="184" font-family="Inter,Manrope,Arial,sans-serif" font-size="54" font-weight="800" fill="#FFFFFF" letter-spacing="-2">Stock management,</text>
+  <text x="65" y="243" font-family="Inter,Manrope,Arial,sans-serif" font-size="54" font-weight="800" fill="#9BE5C1" letter-spacing="-2">made simple.</text>
+  <text x="67" y="291" font-family="Inter,Manrope,Arial,sans-serif" font-size="19" fill="#D2E7E0">Order goods. Record deliveries. Know your stock.</text>
+  <g font-family="Inter,Manrope,Arial,sans-serif" font-size="15" font-weight="600">
+    <rect x="65" y="335" width="141" height="40" rx="20" fill="#D2FFEB" opacity=".13" stroke="#B3F1D2" stroke-opacity=".28"/>
+    <text x="90" y="361" fill="#C5F6DB">React + Vite</text>
+    <rect x="219" y="335" width="155" height="40" rx="20" fill="#D2FFEB" opacity=".13" stroke="#B3F1D2" stroke-opacity=".28"/>
+    <text x="246" y="361" fill="#C5F6DB">PO + GRN</text>
+    <rect x="387" y="335" width="150" height="40" rx="20" fill="#D2FFEB" opacity=".13" stroke="#B3F1D2" stroke-opacity=".28"/>
+    <text x="412" y="361" fill="#C5F6DB">Easy to use</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="671" y="64" width="541" height="291" rx="24" fill="#F8FCFA"/>
+    <rect x="671" y="64" width="541" height="67" rx="24" fill="#EFF7F3"/>
+    <rect x="671" y="107" width="541" height="24" fill="#EFF7F3"/>
+    <circle cx="711" cy="98" r="14" fill="#C8EBDA"/>
+    <g fill="none" stroke="#227758" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M703 95 711 91 719 95 711 99Z"/><path d="M703 95v9l8 4 8-4v-9"/>
+    </g>
+    <text x="739" y="104" font-family="Inter,Manrope,Arial,sans-serif" font-size="19" font-weight="750" fill="#17372F">Your stock workflow</text>
+    <text x="698" y="159" font-family="Inter,Manrope,Arial,sans-serif" font-size="13" fill="#69847B">One easy process, from order to updated stock</text>
+    <g font-family="Inter,Manrope,Arial,sans-serif">
+      <rect x="696" y="183" width="153" height="128" rx="17" fill="#FFFFFF" stroke="#E2EBE6"/>
+      <rect x="712" y="199" width="35" height="35" rx="11" fill="#E4F2FF"/>
+      <g fill="none" stroke="#3B80BE" stroke-width="2.3" stroke-linecap="round"><path d="M721 207h16M721 214h16M721 221h10"/></g>
+      <text x="712" y="261" font-size="16" font-weight="760" fill="#17372F">1. PO</text>
+      <text x="712" y="283" font-size="12.5" fill="#6B8079">Place an order</text>
+      <path d="M855 244h16m-6-6 6 6-6 6" stroke="#7F9B91" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="877" y="183" width="153" height="128" rx="17" fill="#FFFFFF" stroke="#E2EBE6"/>
+      <rect x="893" y="199" width="35" height="35" rx="11" fill="#FFF2D9"/>
+      <g fill="none" stroke="#C58B2D" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round"><path d="M901 210h19v16h-19zM905 206h11M906 218l4 4 7-8"/></g>
+      <text x="893" y="261" font-size="16" font-weight="760" fill="#17372F">2. GRN</text>
+      <text x="893" y="283" font-size="12.5" fill="#6B8079">Check delivery</text>
+      <path d="M1036 244h16m-6-6 6 6-6 6" stroke="#7F9B91" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="1058" y="183" width="128" height="128" rx="17" fill="#E3F8EC" stroke="#CBEBD9"/>
+      <rect x="1074" y="199" width="35" height="35" rx="11" fill="#A8E5C2"/>
+      <path d="m1083 216 6 6 11-13" fill="none" stroke="#227858" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="1074" y="261" font-size="16" font-weight="760" fill="#17372F">3. Stock</text>
+      <text x="1074" y="283" font-size="12.5" fill="#386B56">Auto updated</text>
+    </g>
+  </g>
+</svg>
