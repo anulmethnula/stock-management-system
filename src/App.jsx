@@ -317,7 +317,7 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
   </>;
 }
 
-function GoodsReceived({d,branch,product,canEdit,reason}) {
+function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
   return <>
     <SectionHeading title="Goods received (GRN)" sub="Every delivery received from a Supun branch increases your stock."/>
     {!d.grns.length?<Empty Icon={PackageCheck} title="No goods received yet" sub="Open a stock request and select Receive goods."/>:
@@ -328,9 +328,12 @@ function GoodsReceived({d,branch,product,canEdit,reason}) {
         </div><State value={g.status}/></div>
         <div className="doc-items">{g.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
         {g.note&&<p className="mute">Note: {g.note}</p>}
-        {canEdit&&g.status==="Active"&&<div className="card-actions"><button className="btn ghost sm" onClick={()=>reason("Reverse "+g.id,
-          "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}>
-          <RotateCcw size={15}/> Reverse GRN</button></div>}
+        <div className="card-actions">
+          <button className="btn ghost sm" onClick={()=>setModal({type:"view-grn",record:g})}><Printer size={15}/> View / Print</button>
+          {canEdit&&g.status==="Active"&&<button className="btn ghost sm" onClick={()=>reason("Reverse "+g.id,
+            "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}>
+            <RotateCcw size={15}/> Reverse GRN</button>}
+        </div>
       </div>)}</div>}
   </>;
 }
@@ -390,9 +393,12 @@ function Deliveries({d,customer,product,setModal,canEdit,reason}) {
           <div className="mute">{today(r.date)} · Delivery {one(d.deliveries,r.deliveryN)?.id}</div></div><State value={r.status}/></div>
         <div className="doc-items">{r.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
         <p className="mute">Reason: {r.note}</p>
-        {canEdit&&r.status==="Active"&&<div className="card-actions"><button className="btn ghost sm" onClick={()=>reason("Reverse "+r.id,
-          "This removes the returned quantity from stock and keeps a record of the correction.","/returns/"+r.n+"/reverse","deliveries")}>
-          <RotateCcw size={15}/> Reverse return</button></div>}
+        <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"view-return",record:r})}>
+          <Printer size={15}/> View / Print</button>
+          {canEdit&&r.status==="Active"&&<button className="btn ghost sm" onClick={()=>reason("Reverse "+r.id,
+            "This removes the returned quantity from stock and keeps a record of the correction.","/returns/"+r.n+"/reverse","deliveries")}>
+            <RotateCcw size={15}/> Reverse return</button>}
+        </div>
       </div>)}</div>)}
   </>;
 }
@@ -445,7 +451,7 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="return") return <MovementForm title="Customer return" type="return" doc={modal.delivery} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="adjust") return <AdjustmentForm d={d} record={modal.record} busy={busy} close={close} action={action}/>;
   if(modal.type==="staff") return <StaffForm record={modal.record} close={close} busy={busy} action={action}/>;
-  if(["view-po","view-order","view-delivery"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} close={close}/>;
+  if(["view-po","view-order","view-delivery","view-grn","view-return"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} close={close}/>;
   return null;
 }
 function ReasonDialog({modal,busy,close}) {
@@ -616,18 +622,21 @@ function StaffForm({record,busy,close,action}) {
   </Modal>;
 }
 function DocumentView({modal,d,branch,customer,product,close}) {
-  const doc=modal.record,isPo=modal.type==="view-po",isDelivery=modal.type==="view-delivery";
+  const doc=modal.record,isPo=modal.type==="view-po",isGRN=modal.type==="view-grn";
+  const isDelivery=modal.type==="view-delivery",isReturn=modal.type==="view-return";
+  const hasPrices=isPo||modal.type==="view-order";
   const lines=doc.items||doc.lines;
-  const name=isPo?branch(doc.sid).name:isDelivery?customer(doc.cid).name:customer(doc.cid).name;
-  return <Modal wide title={doc.id} sub={(isPo?"Stock request · ":isDelivery?"Delivery note · ":"Customer order · ")+name} close={close}>
+  const name=isPo||isGRN?branch(doc.sid).name:customer(doc.cid).name;
+  const kind=isPo?"Stock request":isGRN?"Goods received note":isDelivery?"Delivery note":isReturn?"Customer return":"Customer order";
+  return <Modal wide title={doc.id} sub={kind+" · "+name} close={close}>
     <div className="print-sheet">
       <div className="print-sheet-heading"><strong>StockEasy · Supun Group</strong><State value={doc.status}/></div>
       <div className="summary-grid"><div><span>Document</span><strong>{doc.id}</strong></div><div><span>{isPo?"From branch":"Customer company"}</span><strong>{name}</strong></div>
         <div><span>Date</span><strong>{today(doc.date)}</strong></div></div>
-      <div className={"document-table" + (isDelivery ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{!isDelivery&&<strong>Amount</strong>}</div>
+      <div className={"document-table" + (!hasPrices ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{hasPrices&&<strong>Amount</strong>}</div>
         {lines.map(l=><div className="document-table-row" key={l.pid}><span>{product(l.pid).name}</span><span>{l.qty} {product(l.pid).unit}</span>
-          {!isDelivery&&<span>{rs(l.qty*(isPo?l.cost:l.price))}</span>}</div>)}</div>
-      {!isDelivery&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
+          {hasPrices&&<span>{rs(l.qty*(isPo?l.cost:l.price))}</span>}</div>)}</div>
+      {hasPrices&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
       {doc.note&&<p className="mute">Notes: {doc.note}</p>}
     </div>
     <div className="form-actions print-actions"><button className="btn" onClick={()=>window.print()}><Printer size={17}/> Print document</button>
