@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "vite build && node server/server.js",
-    "dev": "concurrently \"node server/server.js\" \"vite\""
+    "dev": "concurrently \"node server/server.js\" \"vite\"",
+    "build": "vite build",
+    "test": "node --test tests/smoke.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.1.1",
