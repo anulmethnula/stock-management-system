@@ -9,6 +9,7 @@
 - 🏢 **Branches:** Add, edit, remove or restore Supun branches.
 - 📦 **Items:** Photos, stock alerts, buying/selling prices.
 - 🧾 **PO + GRN:** Request from any branch; receive full or partial quantities.
+- 📊 **Excel PO:** Download an item template, fill quantities, upload and review before saving.
 - 🏬 **Customers:** Manage customer companies and orders.
 - 🚚 **Deliveries:** Dispatch goods, reduce stock automatically, print delivery notes.
 - ↩️ **Returns & corrections:** Reverse mistakes safely with stock history.
