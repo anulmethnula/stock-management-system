@@ -4,7 +4,7 @@ import {
   Truck, History, Shield, LogOut, Moon, Sun, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
-  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw
+  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -545,6 +545,38 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
   const [quantities,setQuantities]=useState(()=>Object.fromEntries((record?.items||[]).map(l=>[l.pid,l.qty])));
   const [prices,setPrices]=useState(()=>Object.fromEntries((record?.items||[]).map(l=>[l.pid,purchase?l.cost:l.price])));
   const [query,setQuery]=useState(""),[note,setNote]=useState(record?.note||"");
+  const [importing,setImporting]=useState(false);
+  const [importError,setImportError]=useState("");
+  const [imported,setImported]=useState(null);
+  const onExcelUpload=async event=>{
+    const file=event.target.files?.[0];
+    event.target.value="";
+    if(!file)return;
+    setImportError("");setImported(null);
+    if(!file.name.toLowerCase().endsWith(".xlsx")){
+      setImportError("Please upload an Excel .xlsx file.");return;
+    }
+    if(file.size>4*1024*1024){
+      setImportError("The file is too large (maximum 4 MB).");return;
+    }
+    setImporting(true);
+    try {
+      const response=await fetch("/api/po-import",{
+        method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        body:file
+      });
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||"Excel import failed.");
+      // Imported quantities replace the current selection; the PO is NOT saved yet.
+      setQuantities(Object.fromEntries(result.items.map(x=>[x.pid,x.qty])));
+      setPrices(Object.fromEntries(result.items.map(x=>[x.pid,x.cost])));
+      setImported({count:result.count,total:result.total,name:file.name});
+      setQuery("");
+    } catch(error){
+      setImportError(error.message||"Could not read the Excel file.");
+    } finally {setImporting(false);}
+  };
   const items=active(d.products).filter(p=>p.name.toLowerCase().includes(query.toLowerCase()));
   const lines=d.products.filter(p=>number(quantities[p.id])>0).map(p=>({pid:p.id,qty:number(quantities[p.id]),
     [purchase?"cost":"price"]:number(prices[p.id]??(purchase?p.cost:p.sell))}));
@@ -562,7 +594,28 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
         <option value="">Choose {purchase?"branch":"company"}</option>
         {(record?[...parties,...(purchase?d.branches:d.customers).filter(x=>x.id===(purchase?record.sid:record.cid)&&!x.active)]:parties).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <div className="notice"><Info size={18}/>{purchase?"An item can be requested from any branch, even if it has a different usual branch.":"You cannot send more than the available stock when making a delivery."}</div>
-      <h4>Select items & quantities</h4><SearchBox value={query} change={setQuery} placeholder="Find an item…"/>
+      {purchase&&<div className="po-excel">
+        <div className="po-excel-heading"><span className="po-excel-symbol"><Download size={20}/></span>
+          <div><strong>Ordering lots of items?</strong><small>Use Excel instead of adding everything by hand.</small></div></div>
+        <div className="po-excel-steps"><span>1. Download</span><span>2. Fill Quantity in Excel</span><span>3. Upload & check</span></div>
+        <div className="po-excel-actions">
+          <a className="btn ghost sm" href="/api/po-template" download="StockEasy_PO_Template.xlsx">
+            <Download size={16}/> Download Excel template</a>
+          <label className={"btn sm po-excel-upload"+(importing?" disabled":"")}><Upload size={16}/>
+            {importing?"Checking Excel…":"Upload filled Excel"}
+            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              disabled={importing} onChange={onExcelUpload} hidden aria-label="Upload filled Excel template"/>
+          </label>
+        </div>
+        <p className="po-excel-help">Choose the supplier above. Fill only the <b>Quantity</b> column (E) for items you need. You can also change Unit Cost (F).
+          The upload replaces your current item selection, but does not create the PO until you press Save.</p>
+        {importError&&<div className="po-excel-error" role="alert"><AlertTriangle size={17}/><span>{importError}</span></div>}
+        {imported&&<div className="po-excel-success" role="status"><Check size={18}/>
+          <span><b>{imported.count} items loaded from Excel.</b> Please check quantities and prices below before saving.</span>
+          <button type="button" className="icon-btn" title="Dismiss" aria-label="Dismiss import message" onClick={()=>setImported(null)}><X size={16}/></button></div>}
+      </div>}
+      <h4>Select items & quantities {purchase&&<span className="po-excel-optional">(or use Excel above)</span>}</h4>
+      <SearchBox value={query} change={setQuery} placeholder="Find an item…"/>
       <div className="form-item-list">{items.length?items.map(p=>{
         const qty=number(quantities[p.id]),price=number(prices[p.id]??(purchase?p.cost:p.sell));
         return <div className="form-item" key={p.id}><Picture p={p}/><div className="grow">
@@ -573,7 +626,7 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
       }):<p className="mute">No matching active items.</p>}</div>
       {!purchase&&<><label>Order notes (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="Customer request or delivery instructions"/></>}
       <div className="order-total"><span>{lines.length} item(s) selected</span><strong>Total: {rs(total)}</strong></div>
-      <Controls busy={busy} close={close} valid={!!party&&lines.length>0} label={record?"Update order":purchase?"Create PO":"Create customer order"}/>
+      <Controls busy={busy||importing} close={close} valid={!!party&&lines.length>0} label={record?"Update order":purchase?"Create PO":"Create customer order"}/>
     </form>
   </Modal>;
 }
