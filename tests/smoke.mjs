@@ -134,6 +134,12 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/all", "GET", undefined, 401);
   } finally {
     child.kill("SIGTERM");
-    fs.rmSync(temp, { recursive: true, force: true });
+    if (child.exitCode === null) {
+      await Promise.race([
+        new Promise(resolve => child.once("exit", resolve)),
+        new Promise(resolve => setTimeout(resolve, 1500))
+      ]);
+    }
+    fs.rmSync(temp, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
   }
 });
