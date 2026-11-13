@@ -148,7 +148,7 @@ export default function App() {
   const ctx = { d, branch, customer, product, canEdit, user, action, busy, setModal, confirm, reason, productFocus, setProductFocus, openProduct };
   return <div className="app">
     <aside className="side">
-      <div className="logo"><span className="logo-mark"><img src="/stockeasy-mark.svg" alt=""/></span><span>StockEasy<small>SUPUN GROUP</small></span></div>
+      <div className="logo"><img className="brand-full-logo" src="/logo.png" alt="Supun Group of Companies"/></div>
       <nav className="side-menu" aria-label="Main navigation">
         {MENU.filter(([key]) => accessLevel(user,PAGE_FEATURE[key]) !== "none").map(([key, label]) => {
           const Icon = Icons[key];
@@ -196,7 +196,7 @@ export default function App() {
 function Login({ signIn, busy, error }) {
   const [username, setUsername] = useState("admin"), [password, setPassword] = useState("");
   return <div className="login-wrap">
-    <div className="login-intro"><div className="login-brand"><img src="/stockeasy-mark.svg" alt=""/> StockEasy</div>
+    <div className="login-intro"><div className="login-brand"><img className="brand-full-logo" src="/logo.png" alt="Supun Group of Companies"/></div>
       <h1>All your stock.<br/><span>One simple place.</span></h1>
       <p>From suppliers to customer companies — keep every item accounted for.</p>
       <div className="login-path"><span><Building2/> Suppliers</span><ArrowRight/><span><PackageCheck/> Receive</span><ArrowRight/><span><Truck/> Deliver</span></div>
