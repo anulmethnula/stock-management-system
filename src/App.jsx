@@ -155,7 +155,13 @@ export default function App() {
     </aside>
     <main className="main">
       <div className="top-strip"><span><span className="live-dot"/> StockEasy Workspace</span>
-        <button className="btn ghost sm" onClick={() => refresh().then(() => setToast("All records refreshed.")).catch(e => setError(e.message))}><RefreshCw size={14}/> Refresh</button></div>
+        <div className="top-actions">
+          <button className="icon-btn mobile-action" aria-label="Switch theme" title="Switch theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+            {theme === "light" ? <Moon size={19}/> : <Sun size={19}/>}</button>
+          <button className="icon-btn mobile-action" aria-label="Log out" title="Log out" onClick={signOut}><LogOut size={19}/></button>
+          <button className="btn ghost sm" onClick={() => refresh().then(() => setToast("All records refreshed.")).catch(e => setError(e.message))}>
+            <RefreshCw size={14}/><span>Refresh</span></button>
+        </div></div>
       {error && <div className="error-banner" role="alert"><AlertTriangle size={19}/><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={18}/></button></div>}
       <div className="page" key={page}>
         {page === "home" && <Home {...ctx} setPage={setPage} />}
