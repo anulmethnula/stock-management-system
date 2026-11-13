@@ -88,6 +88,7 @@ export default function App() {
   const [error, setError] = useState(""), [toast, setToast] = useState(""), [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("se-theme") || "light");
   const [staff, setStaff] = useState([]);
+  const [productFocus,setProductFocus]=useState(null);
   const refresh = async () => {
     const data = await request("/all");
     setD(data); setUser(data.user);
@@ -143,10 +144,11 @@ export default function App() {
   if (!user) return <Login signIn={signIn} busy={busy} error={error}/>;
   if (!d) return <div className="loading-screen"><AlertTriangle/> Could not load stock data. <button onClick={() => window.location.reload()}>Try again</button></div>;
 
-  const ctx = { d, branch, customer, product, canEdit, user, action, busy, setModal, confirm, reason };
+  const openProduct=pid=>{if(accessLevel(user,"products")==="none"){setError("You do not have access to Items.");setModal(null);return;}setProductFocus(pid);setPage("products");setModal(null);};
+  const ctx = { d, branch, customer, product, canEdit, user, action, busy, setModal, confirm, reason, productFocus, setProductFocus, openProduct };
   return <div className="app">
     <aside className="side">
-      <div className="logo"><span className="logo-mark"><Boxes size={22}/></span><span>StockEasy<small>SUPUN GROUP</small></span></div>
+      <div className="logo"><span className="logo-mark"><img src="/stockeasy-mark.svg" alt=""/></span><span>StockEasy<small>SUPUN GROUP</small></span></div>
       <nav className="side-menu" aria-label="Main navigation">
         {MENU.filter(([key]) => accessLevel(user,PAGE_FEATURE[key]) !== "none").map(([key, label]) => {
           const Icon = Icons[key];
@@ -194,7 +196,7 @@ export default function App() {
 function Login({ signIn, busy, error }) {
   const [username, setUsername] = useState("admin"), [password, setPassword] = useState("");
   return <div className="login-wrap">
-    <div className="login-intro"><div className="login-brand"><Boxes size={30}/> StockEasy</div>
+    <div className="login-intro"><div className="login-brand"><img src="/stockeasy-mark.svg" alt=""/> StockEasy</div>
       <h1>All your stock.<br/><span>One simple place.</span></h1>
       <p>From suppliers to customer companies — keep every item accounted for.</p>
       <div className="login-path"><span><Building2/> Suppliers</span><ArrowRight/><span><PackageCheck/> Receive</span><ArrowRight/><span><Truck/> Deliver</span></div>
@@ -280,10 +282,11 @@ function Directory({ d, type, setModal, confirm, canEdit }) {
   </>;
 }
 
-function Products({d,branch,setModal,confirm,canEdit,user}) {
+function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProductFocus}) {
   const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false), [category,setCategory]=useState("all"), [stockFilter,setStockFilter]=useState("all");
   const categories=[...new Set([...PRODUCT_CATEGORIES,...d.products.map(p=>p.category||"Other")])];
   const filtered=d.products.filter(p => (showArchived||p.active) && (category==="all"||p.category===category) && (stockFilter==="all"||stockLevel(p)===stockFilter) && [p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
+  useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target){setQ(target.name);setCategory("all");setStockFilter("all");setShowArchived(!target.active);}setProductFocus(null);},[productFocus]);
   return <>
     <SectionHeading title="Factory inventory" sub="Helmets, electrical components, safety equipment and manufacturing materials."
       action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
@@ -320,24 +323,18 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to receive</option><option value="Ordered">Ordered</option><option value="Part received">Part received</option><option value="Received">Received</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
     <div className="result-count"><strong>{list.length}</strong> of {d.pos.length} stock requests shown</div>
     {!list.length?<Empty Icon={ClipboardList} title="No matching stock requests" sub="Change the filters or create a new request."/>:
-      <div className="document-grid">{list.map(po=>{
-        const qty=po.items.reduce((a,x)=>a+x.qty,0), received=po.items.reduce((a,x)=>a+x.received,0);
-        const total=po.items.reduce((a,x)=>a+x.qty*x.cost,0);
-        return <div className="card doc-card" key={po.n}><div className="doc-top"><span className="row-icon"><ClipboardList/></span>
-          <div className="grow"><strong>{po.id} <span className="muted-sep">·</span> {branch(po.sid).name}</strong>
-            <div className="mute">{today(po.date)} · {rs(total)}</div></div><State value={po.status}/></div>
-          <div className="po-metrics"><div><small>Ordered</small><strong>{qty}</strong></div><div><small>Received</small><strong>{received}</strong></div><div><small>Remaining</small><strong>{qty-received}</strong></div><div><small>Total</small><strong>{rs(total)}</strong></div></div>
-          <div className="progress-label"><span>Receiving progress</span><span>{qty?Math.round(received/qty*100):0}%</span></div>
-          <div className="bar"><i style={{width:(qty?received/qty*100:0)+"%"}}/></div>
-          <div className="doc-items">{po.items.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
-          <div className="card-actions">
-            <button className="btn ghost sm" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={15}/> View</button>
-            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="btn sm" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={15}/> Receive goods</button>}
-            {canEdit&&po.status==="Ordered"&&<button className="btn ghost sm" onClick={()=>setModal({type:"po",record:po})}><Pencil size={15}/> Edit</button>}
-            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="btn ghost sm danger-action" title="Cancel remaining order" onClick={()=>confirm("Cancel this stock request?",
-              "No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={16}/> Cancel</button>}
-          </div></div>;
-      })}</div>}
+      <div className="po-table-wrap"><div className="po-table-head po-table-row"><span>PO / Date</span><span>Supplier</span><span>Items</span><span>Receiving progress</span><span>Total</span><span>Status</span><span>Actions</span></div>
+        {list.map(po=>{const qty=po.items.reduce((a,x)=>a+x.qty,0),received=po.items.reduce((a,x)=>a+x.received,0),total=po.items.reduce((a,x)=>a+x.qty*x.cost,0),percent=qty?Math.round(received/qty*100):0;return <div className="po-table-row" key={po.n}>
+          <div className="po-ref"><strong>{po.id}</strong><small>{today(po.date)}</small></div>
+          <div className="po-supplier"><span className="row-icon"><ClipboardList size={18}/></span><strong>{branch(po.sid).name}</strong></div>
+          <div className="po-item-summary"><strong>{po.items.length} item{po.items.length===1?"":"s"}</strong><small>{po.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{po.items.length>2?` +${po.items.length-2} more`:""}</small></div>
+          <div className="po-progress"><div><strong>{received}/{qty}</strong><small>{qty-received} remaining</small><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div></div>
+          <strong className="po-total">{rs(total)}</strong><State value={po.status}/>
+          <div className="po-actions"><button className="icon-btn" title="View all details" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={17}/></button>
+            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn primary-icon" title="Receive goods" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={17}/></button>}
+            {canEdit&&po.status==="Ordered"&&<button className="icon-btn" title="Edit request" onClick={()=>setModal({type:"po",record:po})}><Pencil size={16}/></button>}
+            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn danger" title="Cancel remaining request" onClick={()=>confirm("Cancel this stock request?","No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={17}/></button>}</div>
+        </div>})}</div>}
   </>;
 }
 
@@ -363,67 +360,56 @@ function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
 }
 
 function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
-  const [tab,setTab]=useState("open");
-  const list=d.orders.filter(o=>tab==="all"||(tab==="open"?["Open","Part dispatched"].includes(o.status):isClosed(o.status)));
+  const [q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open");
+  const customers=[...new Set(d.orders.map(o=>o.cid))].map(id=>customer(id));
+  const list=d.orders.filter(o=>(customerFilter==="all"||Number(customerFilter)===o.cid)&&(statusFilter==="all"||(statusFilter==="open"?["Open","Part dispatched"].includes(o.status):o.status===statusFilter))&&[o.id,customer(o.cid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
     <SectionHeading title="Customer orders" sub="Record goods requested by customer companies before sending them."
       action={canEdit?()=>setModal({type:"order"}):null} label="New customer order"/>
-    <div className="tabs">{[["open","Waiting to send"],["closed","Completed / cancelled"],["all","All"]].map(([key,label])=>
-      <button key={key} className={tab===key?"on":""} onClick={()=>setTab(key)}>{label}</button>)}</div>
-    {!list.length?<Empty Icon={ShoppingBag} title="No customer orders" sub="Create an order for a customer company."/>:
-      <div className="list">{list.map(o=>{
-        const qty=o.items.reduce((s,l)=>s+l.qty,0), shipped=o.items.reduce((s,l)=>s+l.dispatched,0);
-        return <div className="card doc-card" key={o.n}>
-          <div className="doc-top"><span className="row-icon"><ShoppingBag/></span>
-            <div className="grow"><strong>{o.id} <span className="muted-sep">·</span> {customer(o.cid).name}</strong>
-              <div className="mute">{today(o.date)} · {rs(o.items.reduce((sum,l)=>sum+l.qty*l.price,0))}</div></div>
-            <State value={o.status}/></div>
-          <div className="progress-label"><span>{shipped} of {qty} units sent</span><span>{qty?Math.round(shipped/qty*100):0}%</span></div>
-          <div className="bar"><i style={{width:(qty?shipped/qty*100:0)+"%"}}/></div>
-          <div className="doc-items">{o.items.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
-          <div className="card-actions">
-            <button className="btn ghost sm" onClick={()=>setModal({type:"view-order",record:o})}><Eye size={15}/> View</button>
-            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="btn sm" onClick={()=>setModal({type:"dispatch",order:o})}><Truck size={15}/> Send goods</button>}
-            {canEdit&&o.status==="Open"&&<button className="btn ghost sm" onClick={()=>setModal({type:"order",record:o})}><Pencil size={15}/> Edit</button>}
-            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn danger" title="Cancel remaining order" onClick={()=>confirm("Cancel customer order?",
-              "Any goods already sent will stay in delivery history.","/customer-orders/"+o.n)}><X size={18}/></button>}
-          </div>
-        </div>;
-      })}</div>}
+    <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
+      <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+      <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to send</option><option value="Open">Open</option><option value="Part dispatched">Part dispatched</option><option value="Dispatched">Dispatched</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
+    <div className="result-count"><strong>{list.length}</strong> of {d.orders.length} customer orders shown</div>
+    {!list.length?<Empty Icon={ShoppingBag} title="No matching customer orders" sub="Change the filters or create a new order."/>:
+      <div className="po-table-wrap"><div className="po-table-head po-table-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch progress</span><span>Total</span><span>Status</span><span>Actions</span></div>
+        {list.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),total=o.items.reduce((s,l)=>s+l.qty*l.price,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-table-row" key={o.n}>
+          <div className="po-ref"><strong>{o.id}</strong><small>{today(o.date)}</small></div>
+          <div className="po-supplier"><span className="row-icon"><ShoppingBag size={18}/></span><strong>{customer(o.cid).name}</strong></div>
+          <div className="po-item-summary"><strong>{o.items.length} item{o.items.length===1?"":"s"}</strong><small>{o.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{o.items.length>2?` +${o.items.length-2} more`:""}</small></div>
+          <div className="po-progress"><div><strong>{shipped}/{qty}</strong><small>{qty-shipped} remaining</small><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div></div>
+          <strong className="po-total">{rs(total)}</strong><State value={o.status}/><div className="po-actions"><button className="icon-btn" title="View all details" onClick={()=>setModal({type:"view-order",record:o})}><Eye size={17}/></button>
+            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn primary-icon" title="Send goods" onClick={()=>setModal({type:"dispatch",order:o})}><Truck size={17}/></button>}
+            {canEdit&&o.status==="Open"&&<button className="icon-btn" title="Edit order" onClick={()=>setModal({type:"order",record:o})}><Pencil size={16}/></button>}
+            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn danger" title="Cancel remaining order" onClick={()=>confirm("Cancel customer order?","Any goods already sent will stay in delivery history.","/customer-orders/"+o.n)}><X size={17}/></button>}</div>
+        </div>})}</div>}
   </>;
 }
 
 function Deliveries({d,customer,product,setModal,canEdit,reason}) {
-  const [tab,setTab]=useState("deliveries");
+  const [tab,setTab]=useState("deliveries"),[q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("all");
+  const source=tab==="deliveries"?d.deliveries:d.returns;
+  const customers=[...new Set(source.map(x=>x.cid))].map(id=>customer(id));
+  const rows=source.filter(x=>(customerFilter==="all"||Number(customerFilter)===x.cid)&&(statusFilter==="all"||x.status===statusFilter)&&[x.id,customer(x.cid).name,x.status,x.note,...x.lines.map(l=>product(l.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const switchTab=value=>{setTab(value);setQ("");setCustomerFilter("all");setStatusFilter("all");};
   return <>
     <SectionHeading title="Deliveries & returns" sub="Track what was sent to customer companies, and any goods returned."/>
-    <div className="tabs"><button className={tab==="deliveries"?"on":""} onClick={()=>setTab("deliveries")}>Delivery notes</button>
-      <button className={tab==="returns"?"on":""} onClick={()=>setTab("returns")}>Customer returns</button></div>
-    {tab==="deliveries"?(!d.deliveries.length?<Empty Icon={Truck} title="No deliveries yet" sub="Open a customer order and select Send goods."/>:
-      <div className="list">{d.deliveries.map(x=><div className="card compact-doc" key={x.n}>
-        <div className="doc-top"><span className="row-icon"><Truck/></span><div className="grow"><strong>{x.id} <span className="muted-sep">·</span> {customer(x.cid).name}</strong>
-          <div className="mute">{today(x.date)} · From {one(d.orders,x.orderN)?.id || "customer order"} · Sent by {x.byName||"staff"}</div></div><State value={x.status}/></div>
-        <div className="doc-items">{x.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
-        {x.note&&<p className="mute">{x.note}</p>}
-        <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"view-delivery",record:x})}><Printer size={15}/> View / Print</button>
-          {canEdit&&x.status==="Active"&&<button className="btn ghost sm" onClick={()=>setModal({type:"return",delivery:x})}><RotateCcw size={15}/> Customer return</button>}
-          {canEdit&&x.status==="Active"&&<button className="icon-btn danger" title="Reverse delivery" onClick={()=>reason("Reverse "+x.id,
-            "This restores the sent quantities to stock. Deliveries with returns cannot be reversed.","/deliveries/"+x.n+"/reverse","deliveries")}>
-            <X size={18}/></button>}</div>
-      </div>)}</div>) :
-      (!d.returns.length?<Empty Icon={RotateCcw} title="No customer returns" sub="Returned goods will appear here."/>:
-      <div className="list">{d.returns.map(r=><div className="card compact-doc" key={r.n}>
-        <div className="doc-top"><span className="row-icon"><RotateCcw/></span><div className="grow"><strong>{r.id} <span className="muted-sep">·</span> {customer(r.cid).name}</strong>
-          <div className="mute">{today(r.date)} · Delivery {one(d.deliveries,r.deliveryN)?.id}</div></div><State value={r.status}/></div>
-        <div className="doc-items">{r.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
-        <p className="mute">Reason: {r.note}</p>
-        <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"view-return",record:r})}>
-          <Printer size={15}/> View / Print</button>
-          {canEdit&&r.status==="Active"&&<button className="btn ghost sm" onClick={()=>reason("Reverse "+r.id,
-            "This removes the returned quantity from stock and keeps a record of the correction.","/returns/"+r.n+"/reverse","deliveries")}>
-            <RotateCcw size={15}/> Reverse return</button>}
-        </div>
-      </div>)}</div>)}
+    <div className="tabs"><button className={tab==="deliveries"?"on":""} onClick={()=>switchTab("deliveries")}>Delivery notes <small>{d.deliveries.length}</small></button>
+      <button className={tab==="returns"?"on":""} onClick={()=>switchTab("returns")}>Customer returns <small>{d.returns.length}</small></button></div>
+    <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder={tab==="deliveries"?"Search delivery, customer or item…":"Search return, customer or item…"}/>
+      <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+      <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Reversed">Reversed</option></select></div>
+    <div className="result-count"><strong>{rows.length}</strong> of {source.length} {tab==="deliveries"?"deliveries":"returns"} shown</div>
+    {!rows.length?<Empty Icon={tab==="deliveries"?Truck:RotateCcw} title={tab==="deliveries"?"No matching deliveries":"No matching returns"} sub="Change the filters to find another record."/>:
+      <div className="movement-table-wrap"><div className="movement-table-head movement-table-row"><span>Document / Date</span><span>Customer</span><span>Source</span><span>Items</span><span>{tab==="deliveries"?"Sent by / Note":"Reason"}</span><span>Status</span><span>Actions</span></div>
+        {rows.map(x=><div className="movement-table-row" key={x.n}><div className="po-ref"><strong>{x.id}</strong><small>{today(x.date)}</small></div>
+          <div className="po-supplier"><span className="row-icon">{tab==="deliveries"?<Truck size={18}/>:<RotateCcw size={18}/>}</span><strong>{customer(x.cid).name}</strong></div>
+          <div className="movement-source"><strong>{tab==="deliveries"?(one(d.orders,x.orderN)?.id||"Customer order"):(one(d.deliveries,x.deliveryN)?.id||"Delivery")}</strong></div>
+          <div className="po-item-summary"><strong>{x.lines.reduce((sum,l)=>sum+l.qty,0)} units · {x.lines.length} item{x.lines.length===1?"":"s"}</strong><small>{x.lines.slice(0,2).map(l=>product(l.pid).name).join(", ")}{x.lines.length>2?` +${x.lines.length-2} more`:""}</small></div>
+          <div className="movement-note"><strong>{tab==="deliveries"?(x.byName||"Staff"):(x.note||"No reason")}</strong>{tab==="deliveries"&&<small>{x.note||"No note"}</small>}</div><State value={x.status}/>
+          <div className="po-actions"><button className="icon-btn" title="View and print" onClick={()=>setModal({type:tab==="deliveries"?"view-delivery":"view-return",record:x})}><Eye size={17}/></button>
+            {tab==="deliveries"&&canEdit&&x.status==="Active"&&<button className="icon-btn primary-icon" title="Record customer return" onClick={()=>setModal({type:"return",delivery:x})}><RotateCcw size={17}/></button>}
+            {canEdit&&x.status==="Active"&&<button className="icon-btn danger" title={tab==="deliveries"?"Reverse delivery":"Reverse return"} onClick={()=>reason("Reverse "+x.id,tab==="deliveries"?"This restores sent quantities to stock. Deliveries with returns cannot be reversed.":"This removes the returned quantity from stock and records the correction.",tab==="deliveries"?"/deliveries/"+x.n+"/reverse":"/returns/"+x.n+"/reverse","deliveries")}><X size={17}/></button>}</div>
+        </div>)}</div>}
   </>;
 }
 
@@ -461,7 +447,7 @@ function Staff({ staff,user,setModal,confirm }) {
 }
 
 function Dialog({ modal, ctx, staff, close }) {
-  const {d,branch,customer,product,action,busy,user}=ctx;
+  const {d,branch,customer,product,action,busy,user,openProduct}=ctx;
   if(modal.type==="confirm") return <Modal title={modal.title} sub={modal.text} close={close}>
     <div className="notice"><Info size={20}/> Historical records are kept for stock accuracy.</div>
     <div className="form-actions"><button className="btn" disabled={busy} onClick={modal.execute}>Yes, continue</button>
@@ -476,7 +462,7 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="return") return <MovementForm title="Customer return" type="return" doc={modal.delivery} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="adjust") return <AdjustmentForm d={d} record={modal.record} busy={busy} close={close} action={action}/>;
   if(modal.type==="staff") return <StaffForm record={modal.record} close={close} busy={busy} action={action}/>;
-  if(["view-po","view-order","view-delivery","view-grn","view-return"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} close={close}/>;
+  if(["view-po","view-order","view-delivery","view-grn","view-return"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} openProduct={openProduct} close={close}/>;
   return null;
 }
 function ReasonDialog({modal,busy,close}) {
@@ -662,21 +648,24 @@ function StaffForm({record,busy,close,action}) {
     </form>
   </Modal>;
 }
-function DocumentView({modal,d,branch,customer,product,close}) {
+function DocumentView({modal,d,branch,customer,product,openProduct,close}) {
   const doc=modal.record,isPo=modal.type==="view-po",isGRN=modal.type==="view-grn";
-  const isDelivery=modal.type==="view-delivery",isReturn=modal.type==="view-return";
-  const hasPrices=isPo||modal.type==="view-order";
+  const isDelivery=modal.type==="view-delivery",isReturn=modal.type==="view-return",isOrder=modal.type==="view-order";
+  const hasPrices=isPo||isOrder;
   const lines=doc.items||doc.lines;
   const name=isPo||isGRN?branch(doc.sid).name:customer(doc.cid).name;
   const kind=isPo?"Stock request":isGRN?"Goods received note":isDelivery?"Delivery note":isReturn?"Customer return":"Customer order";
   return <Modal wide title={doc.id} sub={kind+" · "+name} close={close}>
     <div className="print-sheet">
       <div className="print-sheet-heading"><strong>StockEasy · Supun Group</strong><State value={doc.status}/></div>
-      <div className="summary-grid"><div><span>Document</span><strong>{doc.id}</strong></div><div><span>{isPo?"From branch":"Customer company"}</span><strong>{name}</strong></div>
+      <div className="summary-grid"><div><span>Document</span><strong>{doc.id}</strong></div><div><span>{isPo?"Supplier":"Customer company"}</span><strong>{name}</strong></div>
         <div><span>Date</span><strong>{today(doc.date)}</strong></div></div>
-      <div className={"document-table" + (!hasPrices ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{hasPrices&&<strong>Amount</strong>}</div>
-        {lines.map(l=><div className="document-table-row" key={l.pid}><span>{product(l.pid).name}</span><span>{l.qty} {product(l.pid).unit}</span>
-          {hasPrices&&<span>{rs(l.qty*(isPo?l.cost:l.price))}</span>}</div>)}</div>
+      {isPo?<div className="po-detail-table"><div className="po-detail-row po-detail-head"><strong>Item</strong><strong>Ordered</strong><strong>Received</strong><strong>Remaining</strong><strong>Unit cost</strong><strong>Amount</strong></div>
+        {lines.map(l=><div className="po-detail-row" key={l.pid}><button className="product-link" onClick={()=>openProduct(l.pid)}><strong>{product(l.pid).name}</strong><small>{product(l.pid).sku||"No item code"}</small></button><span>{l.qty} {product(l.pid).unit}</span><span>{l.received||0}</span><span>{l.qty-(l.received||0)}</span><span>{rs(l.cost)}</span><strong>{rs(l.qty*l.cost)}</strong></div>)}</div>:
+        isOrder?<div className="po-detail-table"><div className="po-detail-row po-detail-head"><strong>Item</strong><strong>Ordered</strong><strong>Sent</strong><strong>Remaining</strong><strong>Unit price</strong><strong>Amount</strong></div>
+          {lines.map(l=><div className="po-detail-row" key={l.pid}><button className="product-link" onClick={()=>openProduct(l.pid)}><strong>{product(l.pid).name}</strong><small>{product(l.pid).sku||"No item code"}</small></button><span>{l.qty} {product(l.pid).unit}</span><span>{l.dispatched||0}</span><span>{l.qty-(l.dispatched||0)}</span><span>{rs(l.price)}</span><strong>{rs(l.qty*l.price)}</strong></div>)}</div>:
+        <div className={"document-table" + (!hasPrices ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{hasPrices&&<strong>Amount</strong>}</div>
+          {lines.map(l=><div className="document-table-row" key={l.pid}><button className="product-link simple" onClick={()=>openProduct(l.pid)}>{product(l.pid).name}</button><span>{l.qty} {product(l.pid).unit}</span>{hasPrices&&<span>{rs(l.qty*l.price)}</span>}</div>)}</div>}
       {hasPrices&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
       {doc.note&&<p className="mute">Notes: {doc.note}</p>}
     </div>

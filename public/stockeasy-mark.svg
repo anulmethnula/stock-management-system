@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">StockEasy</title>
+  <defs>
+    <linearGradient id="bg" x1="8" y1="5" x2="56" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A8E6B"/>
+      <stop offset="1" stop-color="#0B4C3A"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="18" y1="13" x2="47" y2="51" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9F5E2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#073B2C" flood-opacity=".25"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <path d="M32 9.5 43.5 16v12.8L32 35.4 20.5 28.8V16L32 9.5Z" fill="none" stroke="url(#shine)" stroke-width="3.5" stroke-linejoin="round" filter="url(#shadow)"/>
+  <path d="m21.5 16.6 10.5 6 10.5-6M32 22.6v11.7" fill="none" stroke="url(#shine)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m20.5 29.3 11.5 6.5v12.7L20.5 55 9 48.5V35.8l11.5-6.5Zm23 0L55 35.8v12.7L43.5 55 32 48.5V35.8l11.5-6.5Z" fill="none" stroke="url(#shine)" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="m10 36.4 10.5 6L31 36.5m-10.5 5.9v11.5m12.5-17.5 10.5 6 10.5-6m-10.5 6v11.5" fill="none" stroke="url(#shine)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

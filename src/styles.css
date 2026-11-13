@@ -28,6 +28,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   height:100vh;position:sticky;top:0;display:flex;flex-direction:column;z-index:20}
 .logo{display:flex;align-items:center;gap:11px;font-size:23px;font-weight:800;letter-spacing:-.055em;padding:0 14px 28px}
 .logo-mark{background:#204f44;color:#e4fff1;width:43px;height:43px;border-radius:14px;display:grid;place-items:center}
+.logo-mark img{display:block;width:43px;height:43px;border-radius:14px}
 .logo small{display:block;font-size:10px;letter-spacing:.17em;font-weight:800;color:var(--muted);line-height:1.2;margin-top:2px}
 .side-menu{display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;padding:0 3px 6px}
 .nav{width:100%;border:0;border-radius:11px;background:transparent;color:var(--muted);font-weight:650;
@@ -224,6 +225,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tabs button{border:1px solid var(--line);border-radius:99px;padding:8px 14px;background:var(--card);font-size:12px;font-weight:750;transition:.2s}
 .tabs button:hover{border-color:var(--accent)}
 .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tabs button small{display:inline-grid;place-items:center;min-width:19px;height:19px;margin-left:5px;padding:0 5px;border-radius:99px;background:color-mix(in srgb,currentColor 12%,transparent);font-size:9px}
 .doc-card{padding:20px}
 .document-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),600px));gap:16px;align-items:start;justify-content:start}
 .document-grid .doc-card{padding:18px;border-radius:18px}
@@ -239,6 +241,26 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .document-grid .card-actions{justify-content:flex-start;margin-top:15px;padding-top:14px}
 .danger-action{color:var(--danger)!important}
 .danger-action:hover{border-color:var(--danger)!important;background:color-mix(in srgb,var(--danger) 8%,transparent)!important}
+.po-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.po-table-row{display:grid;grid-template-columns:120px minmax(170px,1.15fr) minmax(180px,1.2fr) minmax(180px,1.1fr) 120px 115px 145px;gap:14px;align-items:center;min-width:1080px;padding:14px 16px;border-bottom:1px solid var(--line);transition:background .2s}
+.po-table-row:last-child{border-bottom:0}
+.po-table-row:not(.po-table-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
+.po-table-head{padding-top:11px;padding-bottom:11px;background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:800}
+.po-ref strong,.po-ref small,.po-item-summary strong,.po-item-summary small{display:block}
+.po-ref strong{font-size:13px;color:var(--accent)}.po-ref small,.po-item-summary small{font-size:10px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-supplier{display:flex;align-items:center;gap:9px;min-width:0}.po-supplier .row-icon{width:34px;height:34px;border-radius:10px}.po-supplier strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-item-summary strong{font-size:11px}.po-progress>div:first-child{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center}.po-progress strong{font-size:11px}.po-progress small{font-size:9px;color:var(--muted)}.po-progress b{font-size:10px;color:var(--accent)}
+.po-progress .bar{height:5px;margin:6px 0 0}.po-total{font-size:12px}.po-actions{display:flex;align-items:center;gap:3px}.primary-icon{background:var(--accent-soft);color:var(--accent)}
+.po-detail-table{margin-top:20px;overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+.po-detail-row{display:grid;grid-template-columns:minmax(180px,1.7fr) 95px 85px 90px 105px 110px;gap:10px;align-items:center;min-width:760px;padding:11px 13px;border-bottom:1px solid var(--line);font-size:11px}
+.po-detail-row:last-child{border-bottom:0}.po-detail-head{background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}.po-detail-row span>strong,.po-detail-row span>small{display:block}.po-detail-row span>small{color:var(--muted);margin-top:3px}
+.product-link{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--fg);text-align:left;line-height:1.4;cursor:pointer}
+.product-link strong,.product-link small{display:block}.product-link small{margin-top:3px;color:var(--muted);font-size:9px}.product-link:hover strong,.product-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}.product-link.simple{font-size:12px}
+.movement-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.movement-table-row{display:grid;grid-template-columns:120px minmax(170px,1.1fr) 130px minmax(190px,1.2fr) minmax(150px,1fr) 105px 110px;gap:14px;align-items:center;min-width:1050px;padding:14px 16px;border-bottom:1px solid var(--line);transition:background .2s}
+.movement-table-row:last-child{border-bottom:0}.movement-table-row:not(.movement-table-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
+.movement-table-head{padding-top:11px;padding-bottom:11px;background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:800}
+.movement-source strong,.movement-note strong,.movement-note small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.movement-source strong,.movement-note strong{font-size:10px}.movement-note small{font-size:9px;color:var(--muted);margin-top:3px}
 .doc-top{margin-bottom:13px}
 .progress-label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;font-weight:700;gap:14px}
 .bar{height:7px;background:var(--soft);border-radius:100px;overflow:hidden;margin:8px 0 12px}
@@ -333,6 +355,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   padding:8vw;background:linear-gradient(120deg,#153b32 0%,#1b5142 52%,#f6faf7 52%,#f6faf7 100%)}
 .login-intro{max-width:580px;color:#eafff2}
 .login-brand{display:flex;align-items:center;gap:10px;font-size:24px;font-weight:800;margin-bottom:65px}
+.login-brand img{width:42px;height:42px;border-radius:13px;box-shadow:0 12px 28px rgba(4,35,25,.24)}
 .login-intro h1{font-size:clamp(36px,4.5vw,68px);line-height:1.14;letter-spacing:-.075em}
 .login-intro h1 span{color:#a3e7c0}
 .login-intro>p{font-size:16px;color:#cfe5d9;max-width:470px;margin-top:24px}
