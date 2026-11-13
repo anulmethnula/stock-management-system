@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { buildPOTemplate } from "../server/po-excel.js";
 
 async function unusedPort() {
   const server = net.createServer();
@@ -59,8 +60,24 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", phone2: "071999999", address: "Office", notes: "Call before delivery", customer_type: "external" });
     const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
+    // Excel template download is protected, and upload previews a PO without creating it.
+    const templateResponse=await fetch(root+"/po-template",{headers:{Cookie:cookie}});
+    assert.equal(templateResponse.status,200);
+    assert.match(templateResponse.headers.get("content-type")||"",/spreadsheetml/);
+    const templateBuffer=Buffer.from(await templateResponse.arrayBuffer());
+    assert.equal(templateBuffer.readUInt32LE(0),0x04034b50);
+    assert.equal((await api("/all")).data.pos.length,0);
+    const fill=buildPOTemplate([{id:pid,sku:"BOX-001",name:"Paper Box",unit:"boxes",cost:100,active:1}],{[pid]:20});
+    const previewResponse=await fetch(root+"/po-import",{
+      method:"POST",headers:{Cookie:cookie,"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:fill
+    });
+    assert.equal(previewResponse.status,200);
+    const preview=await previewResponse.json();
+    assert.equal(preview.count,1);
+    assert.deepEqual(preview.items.map(x=>({pid:x.pid,qty:x.qty,cost:x.cost})),[{pid,qty:20,cost:100}]);
+    assert.equal((await api("/all")).data.pos.length,0);
     // A product's usual branch A does not prevent requesting it from branch B.
-    const poCode = await idOf("/pos", "code", { sid: b, items: [{ pid, qty: 20, cost: 100 }] });
+    const poCode = await idOf("/pos", "code", { sid: b, items: preview.items });
     const poN = (await snapshot()).pos.find(x => x.id === poCode).n;
     // A PO can be edited before receiving starts.
     await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] });
@@ -131,6 +148,8 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.ok(restrictedData.branches.length > 0);
     assert.equal(restrictedData.products.length, 0);
     await api("/branches", "POST", { name:"Forbidden supplier" }, 403, restrictedCookie);
+    await api("/po-template", "GET", undefined, 403, restrictedCookie);
+    await api("/po-import", "POST", {}, 403, restrictedCookie);
     await api("/staff/" + restrictedId, "DELETE");
 
     const viewerId = await idOf("/staff", "id", { username: "viewer", password: "ViewerPassword#123", role: "viewer" });
