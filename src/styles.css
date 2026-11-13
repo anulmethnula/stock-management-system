@@ -231,6 +231,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 .document-table{margin-top:20px}
 .document-table-head,.document-table-row{display:grid;grid-template-columns:minmax(130px,1.8fr) minmax(80px,.8fr) minmax(80px,.8fr);
   gap:10px;padding:10px;border-bottom:1px solid var(--line);font-size:12px}
+.document-table.two-col .document-table-head,.document-table.two-col .document-table-row{grid-template-columns:minmax(130px,2fr) minmax(80px,1fr)}
 .document-table-head{color:var(--muted);background:var(--soft);border-radius:8px 8px 0 0}
 .document-table-row:last-child{border-bottom:0}
 .error-banner{display:flex;gap:12px;align-items:center;background:#fff0ee;color:#9e3a32;border:1px solid #f1c4c0;
@@ -328,7 +329,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 }
 @media print{
   body{background:white;color:black}
-  .app,.toast,.form-actions,.modal-head .icon-btn{display:none!important}
+  .app{display:block!important}
+  .side,.main,.toast,.form-actions,.modal-head .icon-btn{display:none!important}
   .over{position:static!important;background:none!important;display:block;padding:0;overflow:visible;backdrop-filter:none}
   .modal{width:100%!important;max-width:none;box-shadow:none;border:0;padding:0;color:black;background:white}
   .print-sheet{color:black}
