@@ -4,13 +4,17 @@ CREATE TABLE IF NOT EXISTS suppliers (
   name TEXT NOT NULL,
   contact TEXT,
   phone TEXT,
+  phone2 TEXT DEFAULT '',
   location TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  supplier_type TEXT NOT NULL DEFAULT 'external' CHECK(supplier_type IN ('internal','external')),
   active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   sku TEXT,
+  category TEXT NOT NULL DEFAULT 'Other',
   emoji TEXT DEFAULT '📦',
   image TEXT,
   supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
@@ -57,7 +61,10 @@ CREATE TABLE IF NOT EXISTS customers (
   name TEXT NOT NULL,
   contact TEXT DEFAULT '',
   phone TEXT DEFAULT '',
+  phone2 TEXT DEFAULT '',
   address TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  customer_type TEXT NOT NULL DEFAULT 'external' CHECK(customer_type IN ('internal','external')),
   active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS customer_orders (
@@ -122,6 +129,7 @@ CREATE TABLE IF NOT EXISTS staff (
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','staff','viewer')),
+  permissions TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS sessions (

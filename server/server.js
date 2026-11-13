@@ -34,6 +34,7 @@ const money = (v, label = "Price") => {
 };
 const str = (v, max = 255) => String(v ?? "").trim().slice(0, max);
 const required = (v, label, max = 255) => { const s = str(v, max); check(s.length > 0, `Please enter ${label}.`); return s; };
+const supplierType = v => { const type = str(v || "external", 20).toLowerCase(); check(["internal", "external"].includes(type), "Choose a valid supplier type."); return type; };
 const find = (table, id) => {
   const allowed = ["suppliers", "products", "customers", "purchase_orders", "grns", "customer_orders", "deliveries", "staff"];
   check(allowed.includes(table), "Invalid record type.");
@@ -58,6 +59,16 @@ const getCookie = req => (req.headers.cookie || "").split(";").map(s => s.trim()
 const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === "1" ? "; Secure" : ""}`;
 const sessionsMs = 7 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
+const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","deliveries","stock_history","staff"];
+const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : role === "viewer" ? "view" : feature === "staff" ? "none" : "edit"]));
+const cleanPermissions = (value, role = "staff") => {
+  if (role === "admin") return defaultPermissions("admin");
+  let source = value;
+  if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
+  const fallback = defaultPermissions(role);
+  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : fallback[feature]]));
+};
+const publicUser = user => ({ id:user.id, username:user.username, role:user.role, permissions:cleanPermissions(user.permissions,user.role) });
 app.post("/api/login", (req, res) => {
   try {
     const username = required(req.body?.username, "username", 80);
@@ -77,7 +88,7 @@ app.post("/api/login", (req, res) => {
     res.cookie(cookieName, token, {
       httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge: sessionsMs
     });
-    res.json({ user: { id: user.id, username: user.username, role: user.role } });
+    res.json({ user: publicUser(user) });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.status ? e.message : "Login failed." });
   }
@@ -86,14 +97,15 @@ app.post("/api/login", (req, res) => {
 app.use("/api", (req, res, next) => {
   const raw = getCookie(req);
   const session = raw && /^[a-f0-9]{64}$/.test(raw) ?
-    db.prepare("SELECT s.token_hash,u.id,u.username,u.role,u.active FROM sessions s JOIN staff u ON u.id=s.staff_id WHERE s.token_hash=? AND s.expires_at>?").get(tokenHash(raw), Date.now()) : null;
+    db.prepare("SELECT s.token_hash,u.id,u.username,u.role,u.permissions,u.active FROM sessions s JOIN staff u ON u.id=s.staff_id WHERE s.token_hash=? AND s.expires_at>?").get(tokenHash(raw), Date.now()) : null;
   if (!session || !session.active) return res.status(401).json({ error: "Please log in to continue." });
   req.user = session;
   next();
 });
 const editor = (req, res, next) => req.user.role === "viewer" ? res.status(403).json({ error: "Your account has view-only access." }) : next();
 const admin = (req, res, next) => req.user.role !== "admin" ? res.status(403).json({ error: "Only an admin can do this." }) : next();
-app.get("/api/session", run(req => ({ user: { id: req.user.id, username: req.user.username, role: req.user.role } })));
+const requireEdit = feature => (req,res,next) => cleanPermissions(req.user.permissions,req.user.role)[feature] === "edit" ? next() : res.status(403).json({ error:`You do not have edit access to ${feature.replaceAll("_"," ")}.` });
+app.get("/api/session", run(req => ({ user: publicUser(req.user) })));
 app.post("/api/logout", run(req => {
   const token = getCookie(req);
   if (token) db.prepare("DELETE FROM sessions WHERE token_hash=?").run(tokenHash(token));
@@ -101,27 +113,34 @@ app.post("/api/logout", run(req => {
 }));
 // Single page load: include linked documents and their lines, but never password hashes.
 app.get("/api/all", run(req => {
+  const permissions=cleanPermissions(req.user.permissions,req.user.role);
+  const canSee=(...features)=>features.some(feature=>permissions[feature]!=="none");
   const poItems = db.prepare("SELECT po_id,product_id pid,qty,cost,received FROM po_items").all();
   const grnLines = db.prepare("SELECT grn_id,product_id pid,qty FROM grn_lines").all();
   const orderItems = db.prepare("SELECT order_id,product_id pid,qty,price,dispatched FROM customer_order_items").all();
   const deliveryLines = db.prepare("SELECT delivery_id,product_id pid,qty FROM delivery_lines").all();
   const returnLines = db.prepare("SELECT return_id,product_id pid,qty FROM return_lines").all();
   return {
-    user: { id: req.user.id, username: req.user.username, role: req.user.role },
-    branches: db.prepare("SELECT id,name,contact,phone,location,active FROM suppliers ORDER BY active DESC,name").all(),
-    products: db.prepare("SELECT id,name,sku,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all(),
-    customers: db.prepare("SELECT id,name,contact,phone,address,active FROM customers ORDER BY active DESC,name").all(),
-    pos: db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
-      .map(o => ({ ...o, items: poItems.filter(i => i.po_id === o.n) })),
-    grns: db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
-      .map(g => ({ ...g, lines: grnLines.filter(l => l.grn_id === g.n) })),
-    orders: db.prepare("SELECT id n,code id,customer_id cid,date,status,note FROM customer_orders ORDER BY n DESC").all()
-      .map(o => ({ ...o, items: orderItems.filter(i => i.order_id === o.n) })),
-    deliveries: db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
-      .map(d => ({ ...d, lines: deliveryLines.filter(l => l.delivery_id === d.n) })),
-    returns: db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
-      .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) })),
-    movements: db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all()
+    user: publicUser(req.user),
+    branches: canSee("suppliers","products","purchase_orders","goods_received") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
+    products: canSee("products","purchase_orders","goods_received","customer_orders","deliveries","stock_history") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    customers: canSee("customers","customer_orders","deliveries") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
+    pos: canSee("purchase_orders","goods_received") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
+      .map(o => ({ ...o, items: poItems.filter(i => i.po_id === o.n) }))
+      : [],
+    grns: canSee("goods_received") ? db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
+      .map(g => ({ ...g, lines: grnLines.filter(l => l.grn_id === g.n) }))
+      : [],
+    orders: canSee("customer_orders","deliveries") ? db.prepare("SELECT id n,code id,customer_id cid,date,status,note FROM customer_orders ORDER BY n DESC").all()
+      .map(o => ({ ...o, items: orderItems.filter(i => i.order_id === o.n) }))
+      : [],
+    deliveries: canSee("deliveries") ? db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
+      .map(d => ({ ...d, lines: deliveryLines.filter(l => l.delivery_id === d.n) }))
+      : [],
+    returns: canSee("deliveries") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
+      .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
+      : [],
+    movements: canSee("stock_history") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : []
   };
 }));
 
@@ -162,20 +181,20 @@ function recalcOrder(orderId) {
   db.prepare("UPDATE customer_orders SET status=? WHERE id=?").run(status, orderId);
 }
 
-// Branches represent internal Supun locations. Archive rather than lose past documents.
-app.post("/api/branches", editor, run(req => {
+// Suppliers may be internal Supun locations or external businesses. Archive rather than lose past documents.
+app.post("/api/branches", requireEdit("suppliers"), run(req => {
   const b = req.body || {};
-  const info = db.prepare("INSERT INTO suppliers(name,contact,phone,location) VALUES(?,?,?,?)")
-    .run(required(b.name, "branch name"), str(b.contact), str(b.phone, 40), str(b.location, 300));
+  const info = db.prepare("INSERT INTO suppliers(name,contact,phone,phone2,location,notes,supplier_type) VALUES(?,?,?,?,?,?,?)")
+    .run(required(b.name, "supplier name"), str(b.contact), str(b.phone, 40), str(b.phone2, 40), str(b.location, 300), str(b.notes, 1000), supplierType(b.supplier_type));
   return { id: info.lastInsertRowid };
 }));
-app.put("/api/branches/:id", editor, run(req => {
+app.put("/api/branches/:id", requireEdit("suppliers"), run(req => {
   const branch = find("suppliers", req.params.id);
   const b = req.body || {};
-  db.prepare("UPDATE suppliers SET name=?,contact=?,phone=?,location=?,active=? WHERE id=?")
-    .run(required(b.name, "branch name"), str(b.contact), str(b.phone, 40), str(b.location, 300), b.active === 0 ? 0 : 1, branch.id);
+  db.prepare("UPDATE suppliers SET name=?,contact=?,phone=?,phone2=?,location=?,notes=?,supplier_type=?,active=? WHERE id=?")
+    .run(required(b.name, "supplier name"), str(b.contact), str(b.phone, 40), str(b.phone2, 40), str(b.location, 300), str(b.notes, 1000), supplierType(b.supplier_type), b.active === 0 ? 0 : 1, branch.id);
 }));
-app.delete("/api/branches/:id", editor, run(req => {
+app.delete("/api/branches/:id", requireEdit("suppliers"), run(req => {
   const id = find("suppliers", req.params.id).id;
   const used = db.prepare("SELECT 1 FROM products WHERE supplier_id=? UNION SELECT 1 FROM purchase_orders WHERE supplier_id=? LIMIT 1").get(id, id);
   if (used) db.prepare("UPDATE suppliers SET active=0 WHERE id=?").run(id);
@@ -183,18 +202,18 @@ app.delete("/api/branches/:id", editor, run(req => {
   return { archived: !!used };
 }));
 
-app.post("/api/customers", editor, run(req => {
+app.post("/api/customers", requireEdit("customers"), run(req => {
   const b = req.body || {};
-  const info = db.prepare("INSERT INTO customers(name,contact,phone,address) VALUES(?,?,?,?)")
-    .run(required(b.name, "company name"), str(b.contact), str(b.phone, 40), str(b.address, 500));
+  const info = db.prepare("INSERT INTO customers(name,contact,phone,phone2,address,notes,customer_type) VALUES(?,?,?,?,?,?,?)")
+    .run(required(b.name, "company name"), str(b.contact), str(b.phone, 40), str(b.phone2, 40), str(b.address, 500), str(b.notes, 1000), supplierType(b.customer_type));
   return { id: info.lastInsertRowid };
 }));
-app.put("/api/customers/:id", editor, run(req => {
+app.put("/api/customers/:id", requireEdit("customers"), run(req => {
   const id = find("customers", req.params.id).id, b = req.body || {};
-  db.prepare("UPDATE customers SET name=?,contact=?,phone=?,address=?,active=? WHERE id=?")
-    .run(required(b.name, "company name"), str(b.contact), str(b.phone, 40), str(b.address, 500), b.active === 0 ? 0 : 1, id);
+  db.prepare("UPDATE customers SET name=?,contact=?,phone=?,phone2=?,address=?,notes=?,customer_type=?,active=? WHERE id=?")
+    .run(required(b.name, "company name"), str(b.contact), str(b.phone, 40), str(b.phone2, 40), str(b.address, 500), str(b.notes, 1000), supplierType(b.customer_type), b.active === 0 ? 0 : 1, id);
 }));
-app.delete("/api/customers/:id", editor, run(req => {
+app.delete("/api/customers/:id", requireEdit("customers"), run(req => {
   const id = find("customers", req.params.id).id;
   const used = db.prepare("SELECT 1 FROM customer_orders WHERE customer_id=? LIMIT 1").get(id);
   if (used) db.prepare("UPDATE customers SET active=0 WHERE id=?").run(id);
@@ -206,24 +225,24 @@ function productFields(b) {
   const sid = ident(b.sid);
   check(find("suppliers", sid).active, "Choose an active branch.");
   const img = b.img && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(b.img) && b.img.length < 3000000 ? b.img : null;
-  return [required(b.name, "item name"), str(b.sku, 60) || null, str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
+  return [required(b.name, "item name"), str(b.sku, 60) || null, str(b.category, 40) || "Other", str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
     money(b.cost, "Buying price"), money(b.sell ?? 0, "Selling price"), amount(b.reorder ?? 5, "Low-stock warning")];
 }
-app.post("/api/products", editor, run(req => transaction(() => {
+app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
   const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock");
-  const info = db.prepare("INSERT INTO products(name,sku,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?)")
+  const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
   logStock(info.lastInsertRowid, opening, "Opening balance", "NEW ITEM", "Initial quantity", req.user.username);
   return { id: info.lastInsertRowid };
 })));
-app.put("/api/products/:id", editor, run(req => {
+app.put("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id, b = req.body || {};
   const fields = productFields(b);
-  db.prepare("UPDATE products SET name=?,sku=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
+  db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
     .run(...fields, b.active === 0 ? 0 : 1, id);
   // Stock is deliberately not editable here. Use adjustment for an auditable change.
 }));
-app.delete("/api/products/:id", editor, run(req => {
+app.delete("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id;
   const used = db.prepare("SELECT 1 FROM po_items WHERE product_id=? UNION SELECT 1 FROM customer_order_items WHERE product_id=? UNION SELECT 1 FROM stock_movements WHERE product_id=? LIMIT 1").get(id,id,id);
   if (used) db.prepare("UPDATE products SET active=0 WHERE id=?").run(id);
@@ -237,7 +256,7 @@ function poPayload(b) {
   const lines = validateLines(b.items, "order").map(l => ({ ...l, cost: money(l.cost ?? l.product.cost, "Buying price") }));
   return { sid, lines };
 }
-app.post("/api/pos", editor, run(req => transaction(() => {
+app.post("/api/pos", requireEdit("purchase_orders"), run(req => transaction(() => {
   const { sid, lines } = poPayload(req.body || {});
   const id = db.prepare("INSERT INTO purchase_orders(code,supplier_id,date) VALUES('',?,?)").run(sid, today()).lastInsertRowid;
   const document = code("PO", id);
@@ -246,7 +265,7 @@ app.post("/api/pos", editor, run(req => transaction(() => {
   lines.forEach(l => insert.run(id,l.pid,l.qty,l.cost));
   return { code: document };
 })));
-app.put("/api/pos/:id", editor, run(req => transaction(() => {
+app.put("/api/pos/:id", requireEdit("purchase_orders"), run(req => transaction(() => {
   const po = find("purchase_orders", req.params.id);
   check(po.status === "Ordered", "Only orders with no deliveries can be edited.", 409);
   const { sid, lines } = poPayload(req.body || {});
@@ -256,14 +275,14 @@ app.put("/api/pos/:id", editor, run(req => transaction(() => {
   lines.forEach(l => insert.run(po.id,l.pid,l.qty,l.cost));
   return { code: po.code };
 })));
-app.delete("/api/pos/:id", editor, run(req => {
+app.delete("/api/pos/:id", requireEdit("purchase_orders"), run(req => {
   const po = find("purchase_orders", req.params.id);
   check(!["Cancelled","Part cancelled","Received"].includes(po.status), "This order cannot be cancelled.", 409);
   const n = db.prepare("SELECT SUM(received) n FROM po_items WHERE po_id=?").get(po.id).n || 0;
   db.prepare("UPDATE purchase_orders SET status=? WHERE id=?").run(n ? "Part cancelled" : "Cancelled", po.id);
   return { ok: true };
 }));
-app.post("/api/pos/:id/receive", editor, run(req => transaction(() => {
+app.post("/api/pos/:id/receive", requireEdit("goods_received"), run(req => transaction(() => {
   const po = find("purchase_orders", req.params.id);
   check(["Ordered","Part received"].includes(po.status), "This purchase order is not open.", 409);
   const lines = validateLines(req.body?.lines, "receiving");
@@ -287,7 +306,7 @@ app.post("/api/pos/:id/receive", editor, run(req => transaction(() => {
   recalcPO(po.id);
   return { code: document };
 })));
-app.post("/api/grns/:id/reverse", editor, run(req => transaction(() => {
+app.post("/api/grns/:id/reverse", requireEdit("goods_received"), run(req => transaction(() => {
   const grn = find("grns", req.params.id);
   check(grn.status === "Active", "This GRN is already reversed.", 409);
   const lines = db.prepare("SELECT product_id pid,qty FROM grn_lines WHERE grn_id=?").all(grn.id);
@@ -307,7 +326,7 @@ function orderPayload(b) {
   const lines = validateLines(b.items,"customer order").map(l => ({...l,price:money(l.price ?? l.product.sale_price,"Selling price")}));
   return {cid,lines,note:str(b.note,1000)};
 }
-app.post("/api/customer-orders", editor, run(req => transaction(() => {
+app.post("/api/customer-orders", requireEdit("customer_orders"), run(req => transaction(() => {
   const {cid,lines,note}=orderPayload(req.body || {});
   const id=db.prepare("INSERT INTO customer_orders(code,customer_id,date,note) VALUES('',?,?,?)").run(cid,today(),note).lastInsertRowid;
   const document=code("CO",id);
@@ -316,7 +335,7 @@ app.post("/api/customer-orders", editor, run(req => transaction(() => {
   lines.forEach(l=>insert.run(id,l.pid,l.qty,l.price));
   return {code:document};
 })));
-app.put("/api/customer-orders/:id", editor, run(req => transaction(() => {
+app.put("/api/customer-orders/:id", requireEdit("customer_orders"), run(req => transaction(() => {
   const order=find("customer_orders",req.params.id);
   check(order.status==="Open","Only customer orders with no dispatch can be edited.",409);
   const {cid,lines,note}=orderPayload(req.body || {});
@@ -326,13 +345,13 @@ app.put("/api/customer-orders/:id", editor, run(req => transaction(() => {
   lines.forEach(l=>insert.run(order.id,l.pid,l.qty,l.price));
   return {code:order.code};
 })));
-app.delete("/api/customer-orders/:id",editor,run(req=>{
+app.delete("/api/customer-orders/:id",requireEdit("customer_orders"),run(req=>{
   const order=find("customer_orders",req.params.id);
   check(!["Cancelled","Part cancelled","Dispatched"].includes(order.status),"This order cannot be cancelled.",409);
   const shipped=db.prepare("SELECT SUM(dispatched) n FROM customer_order_items WHERE order_id=?").get(order.id).n||0;
   db.prepare("UPDATE customer_orders SET status=? WHERE id=?").run(shipped?"Part cancelled":"Cancelled",order.id);
 }));
-app.post("/api/customer-orders/:id/dispatch",editor,run(req=>transaction(()=>{
+app.post("/api/customer-orders/:id/dispatch",requireEdit("deliveries"),run(req=>transaction(()=>{
   const order=find("customer_orders",req.params.id);
   check(["Open","Part dispatched"].includes(order.status),"This customer order is not open.",409);
   const lines=validateLines(req.body?.lines,"dispatch");
@@ -356,7 +375,7 @@ app.post("/api/customer-orders/:id/dispatch",editor,run(req=>transaction(()=>{
   recalcOrder(order.id);
   return {code:document};
 })));
-app.post("/api/deliveries/:id/reverse",editor,run(req=>transaction(()=>{
+app.post("/api/deliveries/:id/reverse",requireEdit("deliveries"),run(req=>transaction(()=>{
   const delivery=find("deliveries",req.params.id);
   check(delivery.status==="Active","This delivery is already reversed.",409);
   check(!db.prepare("SELECT 1 FROM customer_returns WHERE delivery_id=? AND status='Active' LIMIT 1").get(delivery.id),
@@ -371,7 +390,7 @@ app.post("/api/deliveries/:id/reverse",editor,run(req=>transaction(()=>{
   db.prepare("UPDATE deliveries SET status='Reversed' WHERE id=?").run(delivery.id);
   recalcOrder(delivery.order_id);
 })));
-app.post("/api/returns",editor,run(req=>transaction(()=>{
+app.post("/api/returns",requireEdit("deliveries"),run(req=>transaction(()=>{
   const delivery=find("deliveries",req.body?.deliveryN);
   check(delivery.status==="Active","This delivery cannot accept returns.",409);
   const lines=validateLines(req.body?.lines,"return");
@@ -394,7 +413,7 @@ app.post("/api/returns",editor,run(req=>transaction(()=>{
   }
   return {code:document};
 })));
-app.post("/api/returns/:id/reverse", editor, run(req => transaction(() => {
+app.post("/api/returns/:id/reverse", requireEdit("deliveries"), run(req => transaction(() => {
   const ret = db.prepare("SELECT * FROM customer_returns WHERE id=?").get(ident(req.params.id));
   check(ret, "Return not found.", 404);
   check(ret.status === "Active", "This return is already reversed.", 409);
@@ -408,7 +427,7 @@ app.post("/api/returns/:id/reverse", editor, run(req => transaction(() => {
   return { ok: true };
 })));
 
-app.post("/api/adjustments",admin,run(req=>transaction(()=>{
+app.post("/api/adjustments",requireEdit("stock_history"),run(req=>transaction(()=>{
   const pid=ident(req.body?.pid);
   const qty=Number(req.body?.change);
   check(Number.isSafeInteger(qty)&&qty!==0&&Math.abs(qty)<=100000000,"Enter a non-zero whole-number change.");
@@ -419,13 +438,14 @@ app.post("/api/adjustments",admin,run(req=>transaction(()=>{
 })));
 
 // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
-app.get("/api/staff",admin,run(()=>({ staff:db.prepare("SELECT id,username,role,active FROM staff ORDER BY active DESC,username").all() })));
+app.get("/api/staff",admin,run(()=>({ staff:db.prepare("SELECT id,username,role,permissions,active FROM staff ORDER BY active DESC,username").all().map(user=>({...user,permissions:cleanPermissions(user.permissions,user.role)})) })));
 const validRole=r=>{check(["admin","staff","viewer"].includes(r),"Choose a valid staff role.");return r;};
 app.post("/api/staff",admin,run(req=>{
   const b=req.body||{}, username=required(b.username,"username",80), password=String(b.password||"");
   check(password.length>=8,"Password must be at least 8 characters.");
-  const info=db.prepare("INSERT INTO staff(username,password_hash,role) VALUES(?,?,?)")
-    .run(username,passwordHash(password),validRole(b.role||"staff"));
+  const role=validRole(b.role||"staff"), permissions=JSON.stringify(cleanPermissions(b.permissions,role));
+  const info=db.prepare("INSERT INTO staff(username,password_hash,role,permissions) VALUES(?,?,?,?)")
+    .run(username,passwordHash(password),role,permissions);
   return {id:info.lastInsertRowid};
 }));
 app.put("/api/staff/:id",admin,run(req=>transaction(()=>{
@@ -433,8 +453,9 @@ app.put("/api/staff/:id",admin,run(req=>transaction(()=>{
   const active=b.active===0?0:1;
   const remaining=db.prepare("SELECT COUNT(*) n FROM staff WHERE role='admin' AND active=1 AND id<>?").get(u.id).n;
   check(!(u.role==="admin" && u.active && (role!=="admin"||!active) && remaining===0),"You must keep at least one active admin.",409);
-  db.prepare("UPDATE staff SET username=?,role=?,active=? WHERE id=?")
-    .run(required(b.username,"username",80),role,active,u.id);
+  const permissions=JSON.stringify(cleanPermissions(b.permissions??u.permissions,role));
+  db.prepare("UPDATE staff SET username=?,role=?,permissions=?,active=? WHERE id=?")
+    .run(required(b.username,"username",80),role,permissions,active,u.id);
   if(b.password){
     check(String(b.password).length>=8,"Password must be at least 8 characters.");
     db.prepare("UPDATE staff SET password_hash=? WHERE id=?").run(passwordHash(String(b.password)),u.id);

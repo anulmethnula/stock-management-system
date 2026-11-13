@@ -53,20 +53,24 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     cookie = login.response.headers.get("set-cookie")?.split(";")[0] || "";
     assert.match(cookie, /^stockeasy_session=/);
 
-    const a = await idOf("/branches", "id", { name: "Supun Branch A", contact: "Manager A", phone: "077000001", location: "Colombo" });
-    const b = await idOf("/branches", "id", { name: "Supun Branch B", contact: "Manager B", phone: "077000002", location: "Galle" });
-    await api("/branches/" + a, "PUT", { name: "Supun Central", contact: "Manager A", phone: "077000001", location: "Colombo", active: 1 });
-    const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", address: "Office" });
-    const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", emoji: "📦", sid: a, unit: "boxes",
+    const a = await idOf("/branches", "id", { name: "Supun Branch A", contact: "Manager A", phone: "077000001", phone2: "071000001", location: "Colombo", notes: "Open weekdays", supplier_type: "internal" });
+    const b = await idOf("/branches", "id", { name: "External Supplier B", contact: "Manager B", phone: "077000002", location: "Galle", supplier_type: "external" });
+    await api("/branches/" + a, "PUT", { name: "Supun Central", contact: "Manager A", phone: "077000001", phone2: "071000001", location: "Colombo", notes: "Use rear entrance", supplier_type: "internal", active: 1 });
+    const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", phone2: "071999999", address: "Office", notes: "Call before delivery", customer_type: "external" });
+    const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
     // A product's usual branch A does not prevent requesting it from branch B.
     const poCode = await idOf("/pos", "code", { sid: b, items: [{ pid, qty: 20, cost: 100 }] });
     const poN = (await snapshot()).pos.find(x => x.id === poCode).n;
+    // A PO can be edited before receiving starts.
+    await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] });
+    assert.equal((await snapshot()).pos.find(x => x.n === poN).items[0].cost, 105);
     assert.equal((await snapshot()).products.find(x => x.id === pid).stock, 0);
     await api("/pos/" + poN + "/receive", "POST", { lines: [{ pid, qty: 12 }], by: "Store clerk" });
     let snap = await snapshot();
     assert.equal(snap.products.find(x => x.id === pid).stock, 12);
     assert.equal(snap.pos.find(x => x.n === poN).status, "Part received");
+    await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] }, 409);
     const firstGrn = snap.grns[0].n;
     await api("/pos/" + poN + "/receive", "POST", { lines: [{ pid, qty: 8 }], by: "Store clerk" });
     snap = await snapshot();
@@ -117,6 +121,17 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.ok(snap.movements.some(x => x.type === "Delivered to customer" && x.qty < 0));
     assert.ok(snap.movements.some(x => x.type === "Goods received" && x.qty > 0));
     assert.ok(snap.movements.some(x => x.type === "Stock correction"));
+
+    // Custom permissions hide unapproved modules and block edits at the API.
+    const restrictedPermissions = { dashboard:"none", products:"none", suppliers:"view", customers:"none", purchase_orders:"none", goods_received:"none", customer_orders:"none", deliveries:"none", stock_history:"none" };
+    const restrictedId = await idOf("/staff", "id", { username:"supplier-reader", password:"RestrictedPassword#123", role:"staff", permissions:restrictedPermissions });
+    const restrictedLogin = await api("/login", "POST", { username:"supplier-reader", password:"RestrictedPassword#123" });
+    const restrictedCookie = restrictedLogin.response.headers.get("set-cookie")?.split(";")[0];
+    const restrictedData = (await api("/all", "GET", undefined, 200, restrictedCookie)).data;
+    assert.ok(restrictedData.branches.length > 0);
+    assert.equal(restrictedData.products.length, 0);
+    await api("/branches", "POST", { name:"Forbidden supplier" }, 403, restrictedCookie);
+    await api("/staff/" + restrictedId, "DELETE");
 
     const viewerId = await idOf("/staff", "id", { username: "viewer", password: "ViewerPassword#123", role: "viewer" });
     const viewerLogin = await api("/login", "POST", { username: "viewer", password: "ViewerPassword#123" });

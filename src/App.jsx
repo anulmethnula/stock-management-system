@@ -26,10 +26,15 @@ const number = value => Number(value) || 0;
 const Icons = { home: LayoutDashboard, products: Package, branches: Building2, customers: Users,
   pos: ClipboardList, grns: PackageCheck, orders: ShoppingBag, deliveries: Truck, history: History, staff: Shield };
 const MENU = [
-  ["home", "Home"], ["products", "Items"], ["branches", "Supun branches"],
+  ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
   ["customers", "Customers"], ["pos", "Stock requests"], ["grns", "Goods received"],
   ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["staff", "Staff"]
 ];
+const PRODUCT_CATEGORIES = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
+const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",staff:"staff"};
+const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"]];
+const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="viewer"?"view":"edit"]));
+const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||(feature==="staff"?"none":user?.role==="viewer"?"view":"edit");
 
 function Picture({ p, large = false }) {
   return <span className={large ? "item-picture large" : "item-picture"}>{p?.img ?
@@ -94,8 +99,13 @@ export default function App() {
   useEffect(() => {
     if (page === "staff" && user?.role === "admin") request("/staff").then(result => setStaff(result.staff)).catch(e => setError(e.message));
   }, [page, user?.role]);
+  useEffect(() => {
+    if (!user || accessLevel(user,PAGE_FEATURE[page])!=="none") return;
+    const first=MENU.find(([key])=>accessLevel(user,PAGE_FEATURE[key])!=="none");
+    if(first) setPage(first[0]);
+  }, [user,page]);
 
-  const canEdit = user?.role !== "viewer";
+  const canEdit = accessLevel(user,PAGE_FEATURE[page]) === "edit";
   const branch = id => one(d?.branches || [], id) || { name: "Unknown branch" };
   const customer = id => one(d?.customers || [], id) || { name: "Unknown company" };
   const product = id => one(d?.products || [], id) || { name: "Unknown item", emoji: "📦", unit: "units", stock: 0 };
@@ -138,7 +148,7 @@ export default function App() {
     <aside className="side">
       <div className="logo"><span className="logo-mark"><Boxes size={22}/></span><span>StockEasy<small>SUPUN GROUP</small></span></div>
       <nav className="side-menu" aria-label="Main navigation">
-        {MENU.filter(([key]) => key !== "staff" || user.role === "admin").map(([key, label]) => {
+        {MENU.filter(([key]) => accessLevel(user,PAGE_FEATURE[key]) !== "none").map(([key, label]) => {
           const Icon = Icons[key];
           return <button key={key} className={"nav" + (page === key ? " on" : "")} onClick={() => { setPage(key); setError(""); }}>
             <Icon size={19}/><span>{label}</span>
@@ -186,8 +196,8 @@ function Login({ signIn, busy, error }) {
   return <div className="login-wrap">
     <div className="login-intro"><div className="login-brand"><Boxes size={30}/> StockEasy</div>
       <h1>All your stock.<br/><span>One simple place.</span></h1>
-      <p>From Supun branches to customer companies — keep every item accounted for.</p>
-      <div className="login-path"><span><Building2/> Supun branches</span><ArrowRight/><span><PackageCheck/> Receive</span><ArrowRight/><span><Truck/> Deliver</span></div>
+      <p>From suppliers to customer companies — keep every item accounted for.</p>
+      <div className="login-path"><span><Building2/> Suppliers</span><ArrowRight/><span><PackageCheck/> Receive</span><ArrowRight/><span><Truck/> Deliver</span></div>
     </div>
     <form className="login-card" onSubmit={e => { e.preventDefault(); signIn(username,password); }}>
       <div className="login-icon"><LockKeyhole size={26}/></div><h2>Welcome back</h2><p className="mute">Sign in to manage your stock.</p>
@@ -232,7 +242,7 @@ function Home({ d, setPage, setModal, canEdit, branch }) {
           : <p className="mute">All active items have enough stock. ✅</p>}
         {low.length>4 && <button className="text-button" onClick={() => setPage("products")}>See all items <ArrowRight size={14}/></button>}
       </div></div>
-    {pending.length>0 && <><h2 className="list-heading">Waiting for branch deliveries</h2><div className="list">
+    {pending.length>0 && <><h2 className="list-heading">Waiting for supplier deliveries</h2><div className="list">
       {pending.slice(0,4).map(po=><div className="card compact-row" key={po.n}><span className="row-icon"><ClipboardList/></span>
         <div className="grow"><strong>{po.id}</strong><div className="mute">{branch(po.sid).name} · {today(po.date)}</div></div>
         <State value={po.status}/>{canEdit && <button className="btn sm" onClick={() => setModal({ type: "grn", po })}>Receive goods</button>}</div>)}
@@ -242,20 +252,25 @@ function Home({ d, setPage, setModal, canEdit, branch }) {
 
 function Directory({ d, type, setModal, confirm, canEdit }) {
   const isBranch = type === "branches", list = d[type];
-  const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false);
-  const filtered=list.filter(x => (showArchived||x.active) && [x.name,x.contact,x.phone,x.location,x.address].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false), [recordFilter,setRecordFilter]=useState("all");
+  const typeOf=x=>isBranch?x.supplier_type:x.customer_type;
+  const filtered=list.filter(x => (showArchived||x.active) && (recordFilter==="all"||typeOf(x)===recordFilter) && [x.name,x.contact,x.phone,x.phone2,x.location,x.address,x.notes].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
-    <SectionHeading title={isBranch?"Supun branches":"Customer companies"}
-      sub={isBranch?"Manage the 12 internal Supun branches that supply stock.":"Companies that receive goods from you."}
-      action={canEdit?()=>setModal({type:isBranch?"branch":"customer"}):null} label={isBranch?"Add branch":"Add company"}/>
+    <SectionHeading title={isBranch?"Suppliers":"Customer companies"}
+      sub={isBranch?"Manage internal Supun locations and external supply partners.":"Companies that receive goods from you."}
+      action={canEdit?()=>setModal({type:isBranch?"branch":"customer"}):null} label={isBranch?"Add supplier":"Add company"}/>
     <div className="list-tools"><SearchBox value={q} change={setQ} placeholder={isBranch?"Search branches…":"Search companies…"}/>
+      <div className="supplier-filters" role="group" aria-label={isBranch?"Filter suppliers":"Filter customers"}>
+        {[["all","All"],["internal","Internal"],["external","External"]].map(([key,label])=><button key={key} className={recordFilter===key?"on":""} onClick={()=>setRecordFilter(key)}>{label}<small>{list.filter(x=>x.active&&(key==="all"||typeOf(x)===key)).length}</small></button>)}
+      </div>
       <label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label></div>
     {!filtered.length?<Empty Icon={isBranch?Building2:Users} title="Nothing found" sub="Add a new record or try another search."/>:
-      <div className="grid directory-grid">{filtered.map(x=><div className="card directory-card pop" key={x.id}>
-        <div className="record-head"><span className="record-avatar">{isBranch?<Building2 size={23}/>:<Users size={23}/>}</span>
-          <Pill kind={x.active?"good":"off"}>{x.active?"Active":"Removed"}</Pill></div>
+      <div className="grid directory-grid">{filtered.map(x=><div className={"card directory-card pop supplier-card "+(isBranch?"supplier-"+(x.supplier_type||"external"):"customer-"+(x.customer_type||"external"))} key={x.id}>
+        <div className="record-head"><span className="record-avatar">{(isBranch?x.supplier_type:x.customer_type)==="internal"?<Building2 size={23}/>:isBranch?<Truck size={23}/>:<Users size={23}/>}</span>
+          <div className="record-states"><Pill kind={(isBranch?x.supplier_type:x.customer_type)==="internal"?"neutral":"warn"}>{(isBranch?x.supplier_type:x.customer_type)==="internal"?"Internal":"External"}</Pill><Pill kind={x.active?"good":"off"}>{x.active?"Active":"Removed"}</Pill></div></div>
         <h3>{x.name}</h3><p className="mute">{x.location||x.address||"No location added"}</p>
-        <div className="contact-details">{x.contact&&<span>👤 {x.contact}</span>}{x.phone&&<span>📞 {x.phone}</span>}</div>
+        <div className="contact-details">{x.contact&&<span>👤 {x.contact}</span>}{x.phone&&<span>📞 {x.phone}</span>}{x.phone2&&<span>📱 {x.phone2}</span>}</div>
+        {x.notes&&<p className="record-note">{x.notes}</p>}
         {canEdit && <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:isBranch?"branch":"customer",record:x})}>
           <Pencil size={15}/> Edit {x.active?"":" / Restore"}</button>
           {x.active===1&&<button className="icon-btn danger" title="Remove" onClick={()=>confirm("Remove "+x.name+"?",
@@ -266,52 +281,61 @@ function Directory({ d, type, setModal, confirm, canEdit }) {
 }
 
 function Products({d,branch,setModal,confirm,canEdit,user}) {
-  const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false);
-  const filtered=d.products.filter(p => (showArchived||p.active) && [p.name,p.sku].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false), [category,setCategory]=useState("all"), [stockFilter,setStockFilter]=useState("all");
+  const categories=[...new Set([...PRODUCT_CATEGORIES,...d.products.map(p=>p.category||"Other")])];
+  const filtered=d.products.filter(p => (showArchived||p.active) && (category==="all"||p.category===category) && (stockFilter==="all"||stockLevel(p)===stockFilter) && [p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
-    <SectionHeading title="Your items" sub="Pictures, quantities, buying prices and stock alerts."
+    <SectionHeading title="Factory inventory" sub="Helmets, electrical components, safety equipment and manufacturing materials."
       action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
-    <div className="list-tools"><SearchBox value={q} change={setQ} placeholder="Search name or item code…"/>
+    <div className="list-tools product-tools"><SearchBox value={q} change={setQ} placeholder="Search name, code, category or supplier…"/>
+      <select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+      <select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
       <label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label></div>
+    <div className="result-count"><strong>{filtered.length}</strong> of {d.products.length} items shown{category!=="all"?` in ${category}`:""}</div>
     {!filtered.length?<Empty title="No matching items" sub="Add an item or change your search."/>:
       <div className="grid product-grid">{filtered.map((p,i)=><div className="card product-card pop" style={{"--i":i}} key={p.id}>
         <div className="pic"><Picture p={p} large/></div>
         <div className="product-main"><div className="product-title"><strong>{p.name}</strong>
           {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>
             {stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}</div>
-          <p className="mute">{p.sku||"No item code"} · {branch(p.sid).name}</p>
-          <div className="product-quantity"><strong>{p.stock}</strong> {p.unit} in stock</div>
-          <div className="product-prices"><span>Buy: {rs(p.cost)}</span><span>Sell: {rs(p.sell)}</span></div></div>
+          <div className="product-meta"><span className="category-tag">{p.category||"Other"}</span><span>{p.sku||"No item code"}</span><span>{branch(p.sid).name}</span></div>
+          <div className="product-metrics"><div><small>Available</small><strong>{p.stock} <em>{p.unit}</em></strong></div>
+            <div><small>Buy price</small><strong>{rs(p.cost)}</strong></div><div><small>Sell price</small><strong>{rs(p.sell)}</strong></div></div></div>
         {canEdit && <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"product",record:p})}><Pencil size={15}/> Edit</button>
-          {user.role==="admin"&&<button className="btn ghost sm" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={15}/> Correct stock</button>}
+          {user.role==="admin"&&<button className="btn ghost sm" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={15}/> Update stock</button>}
           {p.active===1&&<button className="icon-btn danger" title="Remove item" onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>}
       </div>)}</div>}
   </>;
 }
 
 function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
-  const [tab,setTab]=useState("open");
-  const list=d.pos.filter(o => tab==="all" || (tab==="open" ? ["Ordered","Part received"].includes(o.status) : isClosed(o.status)));
+  const [q,setQ]=useState(""),[supplierFilter,setSupplierFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open");
+  const suppliers=[...new Set(d.pos.map(o=>o.sid))].map(id=>branch(id));
+  const list=d.pos.filter(o => (supplierFilter==="all"||Number(supplierFilter)===o.sid) && (statusFilter==="all"||(statusFilter==="open"?["Ordered","Part received"].includes(o.status):o.status===statusFilter)) && [o.id,branch(o.sid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
-    <SectionHeading title="Stock requests (PO)" sub="Request goods from any Supun branch. A PO does not add stock until a GRN is saved."
+    <SectionHeading title="Stock requests (PO)" sub="Request goods from any supplier. A PO does not add stock until a GRN is saved."
       action={canEdit?()=>setModal({type:"po"}):null} label="Request stock"/>
-    <div className="tabs">{[["open","Waiting"],["closed","Completed / cancelled"],["all","All"]].map(([key,label])=><button key={key} className={tab===key?"on":""} onClick={()=>setTab(key)}>{label}</button>)}</div>
-    {!list.length?<Empty Icon={ClipboardList} title="No stock requests here" sub="Create a PO to request goods from a branch."/>:
-      <div className="list">{list.map(po=>{
+    <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder="Search PO, supplier or item…"/>
+      <select className="filter-select" value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} aria-label="Filter by supplier"><option value="all">All suppliers</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+      <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to receive</option><option value="Ordered">Ordered</option><option value="Part received">Part received</option><option value="Received">Received</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
+    <div className="result-count"><strong>{list.length}</strong> of {d.pos.length} stock requests shown</div>
+    {!list.length?<Empty Icon={ClipboardList} title="No matching stock requests" sub="Change the filters or create a new request."/>:
+      <div className="document-grid">{list.map(po=>{
         const qty=po.items.reduce((a,x)=>a+x.qty,0), received=po.items.reduce((a,x)=>a+x.received,0);
         const total=po.items.reduce((a,x)=>a+x.qty*x.cost,0);
         return <div className="card doc-card" key={po.n}><div className="doc-top"><span className="row-icon"><ClipboardList/></span>
           <div className="grow"><strong>{po.id} <span className="muted-sep">·</span> {branch(po.sid).name}</strong>
             <div className="mute">{today(po.date)} · {rs(total)}</div></div><State value={po.status}/></div>
-          <div className="progress-label"><span>{received} of {qty} units received</span><span>{qty?Math.round(received/qty*100):0}%</span></div>
+          <div className="po-metrics"><div><small>Ordered</small><strong>{qty}</strong></div><div><small>Received</small><strong>{received}</strong></div><div><small>Remaining</small><strong>{qty-received}</strong></div><div><small>Total</small><strong>{rs(total)}</strong></div></div>
+          <div className="progress-label"><span>Receiving progress</span><span>{qty?Math.round(received/qty*100):0}%</span></div>
           <div className="bar"><i style={{width:(qty?received/qty*100:0)+"%"}}/></div>
           <div className="doc-items">{po.items.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
           <div className="card-actions">
             <button className="btn ghost sm" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={15}/> View</button>
             {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="btn sm" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={15}/> Receive goods</button>}
             {canEdit&&po.status==="Ordered"&&<button className="btn ghost sm" onClick={()=>setModal({type:"po",record:po})}><Pencil size={15}/> Edit</button>}
-            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn danger" title="Cancel remaining order" onClick={()=>confirm("Cancel this stock request?",
-              "No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={18}/></button>}
+            {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="btn ghost sm danger-action" title="Cancel remaining order" onClick={()=>confirm("Cancel this stock request?",
+              "No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={16}/> Cancel</button>}
           </div></div>;
       })}</div>}
   </>;
@@ -319,7 +343,7 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
 
 function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
   return <>
-    <SectionHeading title="Goods received (GRN)" sub="Every delivery received from a Supun branch increases your stock."/>
+    <SectionHeading title="Goods received (GRN)" sub="Every delivery received from a supplier increases your stock."/>
     {!d.grns.length?<Empty Icon={PackageCheck} title="No goods received yet" sub="Open a stock request and select Receive goods."/>:
       <div className="list">{d.grns.map(g=><div className="card compact-doc" key={g.n}>
         <div className="doc-top"><span className="row-icon"><PackageCheck/></span><div className="grow">
@@ -423,15 +447,16 @@ function StockHistory({d,product,user,setModal}) {
 
 function Staff({ staff,user,setModal,confirm }) {
   return <>
-    <SectionHeading title="Staff access" sub="Give people access without sharing the admin password."
-      action={()=>setModal({type:"staff"})} label="Add staff member"/>
-    <div className="grid directory-grid">{staff.map(s=><div className="card directory-card" key={s.id}>
+    <SectionHeading title="User access management" sub="Create accounts and choose View, Edit, or No Access for every system module."
+      action={()=>setModal({type:"staff"})} label="Add user account"/>
+    <div className="grid staff-grid">{staff.map(s=>{const levels=Object.values(s.permissions||{});return <div className="card directory-card staff-card" key={s.id}>
       <div className="record-head"><span className="record-avatar"><Shield size={23}/></span><Pill kind={s.active?"good":"off"}>{s.active?"Active":"Disabled"}</Pill></div>
-      <h3>{s.username}</h3><p className="mute">{s.role==="admin"?"Administrator":s.role==="staff"?"Can manage stock":"Can view only"}</p>
-      <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"staff",record:s})}><Pencil size={15}/> Edit</button>
+      <h3>{s.username}</h3><p className="mute">{s.role==="admin"?"Administrator · Full system access":"Custom module access"}</p>
+      {s.role!=="admin"&&<div className="access-summary"><span><strong>{levels.filter(x=>x==="edit").length}</strong>Edit</span><span><strong>{levels.filter(x=>x==="view").length}</strong>View</span><span><strong>{levels.filter(x=>x==="none").length}</strong>Hidden</span></div>}
+      <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"staff",record:s})}><Pencil size={15}/> Edit access</button>
         {s.id!==user.id&&s.active===1&&<button className="icon-btn danger" title="Disable account" onClick={()=>confirm("Disable "+s.username+"?",
           "This person will no longer be able to sign in.","/staff/"+s.id,"DELETE","staff")}><Trash2 size={16}/></button>}</div>
-    </div>)}</div>
+    </div>})}</div>
   </>;
 }
 
@@ -466,23 +491,30 @@ function ReasonDialog({modal,busy,close}) {
 }
 function DirectoryForm({modal,close,busy,action}) {
   const isBranch=modal.type==="branch",record=modal.record;
-  const [f,setF]=useState(()=>record?{...record}:{name:"",contact:"",phone:"",location:"",address:"",active:1});
+  const [f,setF]=useState(()=>record?{...record}:{name:"",contact:"",phone:"",phone2:"",location:"",address:"",notes:"",supplier_type:"external",customer_type:"external",active:1});
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
   const route=isBranch?"branches":"customers";
-  return <Modal title={(record?"Edit ":"Add ")+(isBranch?"Supun branch":"customer company")} sub="Fill in the details below." close={close}>
-    <form onSubmit={e=>{e.preventDefault();action("/"+route+(record?"/"+record.id:""),record?"PUT":"POST",f,(isBranch?"Branch":"Company")+" saved.");}}>
-      <label>{isBranch?"Branch name":"Company name"} *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder={isBranch?"Example: Supun Branch 01":"Example: ABC Company"}/>
+  const typeKey=isBranch?"supplier_type":"customer_type",recordType=f[typeKey]||"external";
+  return <Modal title={(record?"Edit ":"Add ")+(isBranch?"supplier":"customer company")} sub="Fill in the details below." close={close}>
+    <form onSubmit={e=>{e.preventDefault();action("/"+route+(record?"/"+record.id:""),record?"PUT":"POST",f,(isBranch?"Supplier":"Company")+" saved.");}}>
+      <label>{isBranch?"Supplier":"Customer"} type *</label><div className="type-choice">
+        <button type="button" className={recordType==="internal"?"on":""} onClick={()=>set(typeKey,"internal")}><Building2 size={18}/><span><strong>Internal</strong><small>Supun group</small></span></button>
+        <button type="button" className={recordType==="external"?"on":""} onClick={()=>set(typeKey,"external")}>{isBranch?<Truck size={18}/>:<Users size={18}/>}<span><strong>External</strong><small>Outside company</small></span></button>
+      </div>
+      <label>{isBranch?"Supplier name":"Company name"} *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder={isBranch?"Example: Fresh Farm Foods":"Example: ABC Company"}/>
       <label>Contact person</label><input value={f.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="Contact name"/>
-      <label>Phone</label><input type="tel" value={f.phone||""} onChange={e=>set("phone",e.target.value)} placeholder="Contact number"/>
-      <label>{isBranch?"Branch location":"Delivery address"}</label><textarea rows={2} value={(isBranch?f.location:f.address)||""} onChange={e=>set(isBranch?"location":"address",e.target.value)} placeholder="Address or location"/>
+      <div className="two"><div><label>Primary phone</label><input type="tel" value={f.phone||""} onChange={e=>set("phone",e.target.value)} placeholder="Contact number"/></div>
+      <div><label>Secondary phone</label><input type="tel" value={f.phone2||""} onChange={e=>set("phone2",e.target.value)} placeholder="Alternative number"/></div></div>
+      <label>{isBranch?"Supplier location":"Delivery address"}</label><textarea rows={2} value={(isBranch?f.location:f.address)||""} onChange={e=>set(isBranch?"location":"address",e.target.value)} placeholder="Address or location"/>
+      <label>Notes</label><textarea rows={3} value={f.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Add delivery instructions, opening hours, or other notes"/>
       {record&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Active (available in new orders)</label>}
-      <Controls busy={busy} close={close} label={record?"Update details":"Add "+(isBranch?"branch":"company")} valid={f.name.trim().length>0}/>
+      <Controls busy={busy} close={close} label={record?"Update details":"Add "+(isBranch?"supplier":"company")} valid={f.name.trim().length>0}/>
     </form>
   </Modal>;
 }
 function ProductForm({modal,close,busy,action,d}) {
   const p=modal.record,branches=active(d.branches);
-  const [f,setF]=useState(()=>p?{...p}:{name:"",sku:"",emoji:"📦",img:null,sid:branches[0]?.id||"",unit:"pieces",cost:0,sell:0,stock:0,reorder:5,active:1});
+  const [f,setF]=useState(()=>p?{...p}:{name:"",sku:"",category:"Helmets",emoji:"📦",img:null,sid:branches[0]?.id||"",unit:"pieces",cost:0,sell:0,stock:0,reorder:5,active:1});
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
   const upload=e=>{
     const file=e.target.files?.[0]; if(!file)return;
@@ -498,17 +530,18 @@ function ProductForm({modal,close,busy,action,d}) {
   };
   return <Modal title={p?"Edit item":"Add new item"} sub="Pictures and simple names help staff find items quickly." close={close}>
     <form onSubmit={e=>{e.preventDefault();action("/products"+(p?"/"+p.id:""),p?"PUT":"POST",f,"Item saved.");}}>
-      <label>Item name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: Cleaning liquid 1L"/>
+      <label>Item name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: Safety helmet shell"/>
       <div className="two"><div><label>Item code (optional)</label><input value={f.sku||""} onChange={e=>set("sku",e.target.value)} placeholder="ITEM-001"/></div>
         <div><label>Counted in</label><input value={f.unit} onChange={e=>set("unit",e.target.value)} placeholder="pieces, packs, bottles" required/></div></div>
+      <label>Category *</label><select required value={f.category||"Other"} onChange={e=>set("category",e.target.value)}>{PRODUCT_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select>
       <label>Picture or icon</label><div className="upload-row"><Picture p={f}/>
         <label className="btn ghost sm file-picker"><Camera size={16}/> Upload photo<input type="file" hidden accept="image/*" onChange={upload}/></label>
         <select aria-label="Choose icon" value={f.emoji} onChange={e=>set("emoji",e.target.value)} className="emoji-picker">
-          {["📦","🥛","🍚","🥚","🧴","🧻","🛍️","🧹","📄","💻","🪑","🧽","🔧","🧃"].map(v=><option key={v}>{v}</option>)}</select>
+          {["📦","🪖","⚡","🔌","💡","🔋","🧤","🥽","🦺","🔧","⚙️","🧰","🔩","🛠️","🧯","🧵"].map(v=><option key={v}>{v}</option>)}</select>
         {f.img&&<button type="button" className="text-button" onClick={()=>set("img",null)}>Remove photo</button>}</div>
-      <label>Usual Supun branch *</label><select required value={f.sid} onChange={e=>set("sid",Number(e.target.value))}>
-        <option value="">Select a branch</option>{d.branches.filter(x=>x.active||x.id===f.sid).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
-      <div className="notice"><Info size={18}/> You can still request this item from any other branch in a PO.</div>
+      <label>Usual supplier *</label><select required value={f.sid} onChange={e=>set("sid",Number(e.target.value))}>
+        <option value="">Select a supplier</option>{d.branches.filter(x=>x.active||x.id===f.sid).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
+      <div className="notice"><Info size={18}/> You can still request this item from any other supplier in a PO.</div>
       <div className="two"><div><label>Buying price (Rs)</label><input type="number" min="0" step=".01" value={f.cost} onChange={e=>set("cost",e.target.value)} required/></div>
         <div><label>Selling price (Rs)</label><input type="number" min="0" step=".01" value={f.sell} onChange={e=>set("sell",e.target.value)} required/></div></div>
       <div className="two">{!p&&<div><label>Starting stock</label><input type="number" min="0" step="1" value={f.stock} onChange={e=>set("stock",e.target.value)} required/></div>}
@@ -537,9 +570,9 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
       (purchase?"Stock request":"Customer order")+" saved.",purchase?"pos":"orders");
   };
   return <Modal wide title={purchase?(record?"Edit stock request":"Request stock from branch"):(record?"Edit customer order":"New customer order")}
-    sub={purchase?"Make a PO for any Supun branch. Stock changes only after goods are received.":"Choose a company, then select what they want to order."} close={close}>
+    sub={purchase?"Make a PO for any supplier. Stock changes only after goods are received.":"Choose a company, then select what they want to order."} close={close}>
     <form onSubmit={handle}>
-      <label>{purchase?"Supun branch":"Customer company"} *</label><select value={party} required onChange={e=>setParty(e.target.value)}>
+      <label>{purchase?"Supplier":"Customer company"} *</label><select value={party} required onChange={e=>setParty(e.target.value)}>
         <option value="">Choose {purchase?"branch":"company"}</option>
         {(record?[...parties,...(purchase?d.branches:d.customers).filter(x=>x.id===(purchase?record.sid:record.cid)&&!x.active)]:parties).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <div className="notice"><Info size={18}/>{purchase?"An item can be requested from any branch, even if it has a different usual branch.":"You cannot send more than the available stock when making a delivery."}</div>
@@ -593,29 +626,37 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
   </Modal>;
 }
 function AdjustmentForm({d,record,busy,close,action}) {
-  const [pid,setPid]=useState(record?.id||active(d.products)[0]?.id||""),[change,setChange]=useState(""),[reason,setReason]=useState("");
+  const [pid,setPid]=useState(record?.id||active(d.products)[0]?.id||""),[target,setTarget]=useState(record?.stock??""),[reason,setReason]=useState("");
   const selected=one(d.products,pid);
-  return <Modal title="Correct stock quantity" sub="Every correction is saved in stock history with your name." close={close}>
-    <form onSubmit={e=>{e.preventDefault();action("/adjustments","POST",{pid:Number(pid),change:Number(change),reason},"Stock correction recorded.","history");}}>
-      <label>Item</label><select required value={pid} onChange={e=>setPid(e.target.value)}>{active(d.products).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+  const change=Number(target)-Number(selected?.stock||0);
+  return <Modal title="Update stock count" sub="Enter the actual quantity counted. Every update is saved in stock history." close={close}>
+    <form onSubmit={e=>{e.preventDefault();action("/adjustments","POST",{pid:Number(pid),change,reason},"Stock count updated.","history");}}>
+      <label>Item</label><select required value={pid} onChange={e=>{const id=Number(e.target.value);setPid(id);setTarget(one(d.products,id)?.stock??"");}}>{active(d.products).map(p=><option key={p.id} value={p.id}>{p.name} · {p.sku||"No code"}</option>)}</select>
       <div className="notice"><Package size={18}/> Current stock: <strong>{selected?.stock||0} {selected?.unit||""}</strong></div>
-      <label>Change amount *</label><input required type="number" step="1" value={change} onChange={e=>setChange(e.target.value)} placeholder="Example: -2 for damage, +3 for correction"/>
-      <p className="mute">Positive adds stock (+5). Negative removes stock (-5).</p>
-      <label>Why is this change needed? *</label><textarea required rows={3} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Explain the change for future reference"/>
-      <Controls busy={busy} close={close} valid={!!pid&&Number.isInteger(Number(change))&&Number(change)!==0&&!!reason.trim()} label="Save stock correction"/>
+      <label>New stock count *</label><input required autoFocus type="number" min="0" step="1" value={target} onChange={e=>setTarget(e.target.value)} placeholder="Enter the quantity physically counted"/>
+      {target!==""&&<p className="mute">This will {change>=0?"add":"remove"} <strong>{Math.abs(change)} {selected?.unit||"units"}</strong>.</p>}
+      <label>Reason for update *</label><textarea required rows={3} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Example: Physical stock count on factory floor"/>
+      <Controls busy={busy} close={close} valid={!!pid&&target!==""&&Number.isInteger(Number(target))&&Number(target)>=0&&change!==0&&!!reason.trim()} label="Update stock count"/>
     </form>
   </Modal>;
 }
 function StaffForm({record,busy,close,action}) {
-  const [f,setF]=useState(()=>record?{...record,password:""}:{username:"",password:"",role:"staff",active:1});
+  const [f,setF]=useState(()=>record?{...record,password:"",permissions:record.permissions||defaultAccess(record.role)}:{username:"",password:"",role:"staff",permissions:defaultAccess("staff"),active:1});
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
-  return <Modal title={record?"Edit staff member":"Add staff member"} sub="Admins manage settings; staff can work with stock; viewers can only read." close={close}>
+  const setPermission=(key,value)=>setF(o=>({...o,permissions:{...o.permissions,[key]:value}}));
+  const changeRole=role=>setF(o=>({...o,role,permissions:defaultAccess(role)}));
+  return <Modal wide title={record?"Edit user access":"Add user account"} sub="Choose exactly which parts of StockEasy this person can see or change." close={close}>
     <form onSubmit={e=>{e.preventDefault();action("/staff"+(record?"/"+record.id:""),record?"PUT":"POST",f,"Staff account saved.","staff");}}>
       <label>Username *</label><input required value={f.username} onChange={e=>set("username",e.target.value)} autoComplete="off"/>
       <label>{record?"New password (leave blank to keep old password)":"Password (8 characters minimum) *"}</label>
       <input type="password" minLength={8} required={!record} value={f.password} onChange={e=>set("password",e.target.value)} autoComplete="new-password"/>
-      <label>Access level</label><select value={f.role} onChange={e=>set("role",e.target.value)}>
-        <option value="staff">Staff — receive & deliver goods</option><option value="viewer">Viewer — read only</option><option value="admin">Admin — full access</option></select>
+      <label>Account type</label><select value={f.role} onChange={e=>changeRole(e.target.value)}>
+        <option value="staff">Custom access</option><option value="viewer">View-only preset</option><option value="admin">Administrator — full system access</option></select>
+      {f.role==="admin"?<div className="notice"><Shield size={18}/><span><strong>Administrators have full access</strong><br/>They can manage all records, stock corrections, and user accounts.</span></div>:
+        <div className="permission-panel"><div className="permission-head"><span>System module</span><span>Permission</span></div>
+          {ACCESS_MODULES.map(([key,label])=><div className="permission-row" key={key}><span>{label}</span><select value={f.permissions?.[key]||"none"} onChange={e=>setPermission(key,e.target.value)}>
+            <option value="none">No access</option><option value="view">View only</option><option value="edit">View & edit</option></select></div>)}
+        </div>}
       {record&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Account active</label>}
       <Controls busy={busy} close={close} valid={!!f.username.trim()&&(!!record||f.password.length>=8)} label="Save staff account"/>
     </form>

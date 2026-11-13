@@ -41,11 +41,37 @@ function addColumn(table, name, definition) {
   if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
 }
 addColumn("suppliers", "location", "TEXT DEFAULT ''");
+addColumn("suppliers", "phone2", "TEXT DEFAULT ''");
+addColumn("suppliers", "notes", "TEXT DEFAULT ''");
+addColumn("suppliers", "supplier_type", "TEXT NOT NULL DEFAULT 'external'");
 addColumn("suppliers", "active", "INTEGER NOT NULL DEFAULT 1");
+addColumn("customers", "phone2", "TEXT DEFAULT ''");
+addColumn("customers", "notes", "TEXT DEFAULT ''");
+addColumn("customers", "customer_type", "TEXT NOT NULL DEFAULT 'external'");
 addColumn("products", "sku", "TEXT");
+addColumn("products", "category", "TEXT NOT NULL DEFAULT 'Other'");
 addColumn("products", "sale_price", "REAL NOT NULL DEFAULT 0");
 addColumn("products", "active", "INTEGER NOT NULL DEFAULT 1");
 addColumn("grns", "status", "TEXT NOT NULL DEFAULT 'Active'");
+addColumn("staff", "permissions", "TEXT NOT NULL DEFAULT '{}'");
+
+// Replace the original grocery demo catalogue with factory-relevant examples.
+const legacyProducts = [
+  ["Rice 5kg bag", "Safety helmet shell", "HEL-SHELL-001", "Helmets", "🪖", "pieces"],
+  ["Fresh milk 1L", "Copper wire 2.5mm", "ELE-WIRE-25", "Electrical", "🔌", "rolls"],
+  ["Eggs tray (30)", "32A circuit breaker", "ELE-MCB-32", "Electrical", "⚡", "pieces"],
+  ["Paper bags", "Helmet chin strap", "HEL-STRAP-001", "Helmets", "🧵", "bundles"],
+  ["Cardboard boxes", "Helmet packaging box", "PKG-BOX-001", "Packaging", "📦", "boxes"],
+  ["Dish soap", "Clear helmet visor", "HEL-VISOR-CLR", "Helmets", "🥽", "pieces"],
+  ["Tissue rolls", "Cut-resistant safety gloves", "PPE-GLOVE-001", "Safety gear", "🧤", "pairs"]
+];
+for (const [oldName, name, sku, category, emoji, unit] of legacyProducts) {
+  db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,unit=?,image=NULL WHERE name=?").run(name, sku, category, emoji, unit, oldName);
+}
+db.prepare("UPDATE products SET category='Helmets' WHERE sku LIKE 'HEL-%' AND category='Other'").run();
+db.prepare("UPDATE products SET category='Electrical' WHERE sku LIKE 'ELE-%' AND category='Other'").run();
+db.prepare("UPDATE products SET category='Packaging' WHERE sku LIKE 'PKG-%' AND category='Other'").run();
+db.prepare("UPDATE products SET category='Safety gear' WHERE sku LIKE 'PPE-%' AND category='Other'").run();
 
 export function passwordHash(password) {
   const salt = crypto.randomBytes(16).toString("hex");
