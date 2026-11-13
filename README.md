@@ -1,36 +1,34 @@
-<p align="center">
-  <img src="assets/stockeasy-banner.svg" alt="StockEasy — simple stock management" width="100%">
-</p>
+<p align="center"><img src="assets/stockeasy-banner.svg" alt="StockEasy" width="100%"></p>
 
-<h2 align="center">📦 StockEasy</h2>
-<p align="center">Simple stock management for small businesses, built with React.</p>
-
-## ✨ Features
-- 📊 Dashboard with stock alerts
-- 📦 Products with pictures and icons
-- 🚚 Supplier management
-- 🧾 Purchase Orders (PO)
-- ✅ Goods Received Notes (GRN)
-- 🔄 Automatic stock updates and partial deliveries
-- 📱 Mobile-friendly interface with light/dark mode
+<h2 align="center">📦 StockEasy — Supun Group Stock Management</h2>
+<p align="center">A simple React system to manage goods from Supun branches to customer companies.</p>
 
 ## 🔄 How it works
-**Create PO → Receive goods → Save GRN → Stock updates**
+**Supun branch → PO (request) → GRN (receive) → Stock → Customer order → Delivery**
 
-Example: Order **20 boxes**, receive **12** → stock increases by **12**; **8** remain pending.
+- 🏢 **Branches:** Add, edit, remove or restore Supun branches.
+- 📦 **Items:** Photos, stock alerts, buying/selling prices.
+- 🧾 **PO + GRN:** Request from any branch; receive full or partial quantities.
+- 🏬 **Customers:** Manage customer companies and orders.
+- 🚚 **Deliveries:** Dispatch goods, reduce stock automatically, print delivery notes.
+- ↩️ **Returns & corrections:** Reverse mistakes safely with stock history.
+- 🔐 **Staff accounts:** Admin, staff and view-only access.
+- 📱 **Simple UI:** Icons, gentle animations, mobile layout, light/dark mode.
 
 ## 🚀 Run locally
-Install [Node.js](https://nodejs.org/), then double-click **`start.bat`** on Windows, or run:
+Install [Node.js 22](https://nodejs.org/). On Windows, double-click **`start.bat`** or run:
 
 ```bash
 npm install
 npm start
 ```
 
-Open **http://localhost:3001**. For development, run `npm run dev`.
+Open **http://localhost:3001**. On the first start, your **admin password appears in the terminal window**. Save it safely (username: `admin` unless changed).
 
-**Built with:** React · Vite · Node.js · Express · SQLite · Lucide Icons
+For development: `npm run dev` · Build: `npm run build` · Test: `npm test`
 
-> ⚠️ **Prototype:** Not ready for live business use yet. Login, user permissions, stock-out tracking, and stronger PO/GRN checks still need to be added.
+**Built with:** React · Vite · Express · SQLite · Lucide Icons
 
-<p align="center"><sub>Developed with assistance from Claude AI.</sub></p>
+> ⚠️ **Local-first project:** Back up `database/stockeasy.db` before updating. Existing PO/GRN data is kept when the database is upgraded. Old sample suppliers remain until you remove them. Do not expose this app directly to the internet without further security and deployment review.
+
+<p align="center"><sub>Built with AI assistance · StockEasy for Supun Group</sub></p>
