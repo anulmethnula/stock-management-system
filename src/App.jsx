@@ -624,7 +624,7 @@ function DocumentView({modal,d,branch,customer,product,close}) {
       <div className="print-sheet-heading"><strong>StockEasy · Supun Group</strong><State value={doc.status}/></div>
       <div className="summary-grid"><div><span>Document</span><strong>{doc.id}</strong></div><div><span>{isPo?"From branch":"Customer company"}</span><strong>{name}</strong></div>
         <div><span>Date</span><strong>{today(doc.date)}</strong></div></div>
-      <div className="document-table"><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{!isDelivery&&<strong>Amount</strong>}</div>
+      <div className={"document-table" + (isDelivery ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{!isDelivery&&<strong>Amount</strong>}</div>
         {lines.map(l=><div className="document-table-row" key={l.pid}><span>{product(l.pid).name}</span><span>{l.qty} {product(l.pid).unit}</span>
           {!isDelivery&&<span>{rs(l.qty*(isPo?l.cost:l.price))}</span>}</div>)}</div>
       {!isDelivery&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
