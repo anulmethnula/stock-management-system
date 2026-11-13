@@ -1,0 +1,12 @@
+# New untracked dependencies, build files, and private/local data
+node_modules/
+dist/
+database/*.db
+database/*.db-shm
+database/*.db-wal
+.env
+.env.*
+.DS_Store
+*.log
+
+# Note: already-tracked files stay tracked until explicitly removed with git rm --cached.
