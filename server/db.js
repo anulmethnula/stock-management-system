@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -8,7 +8,29 @@ const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "datab
 fs.mkdirSync(dir, { recursive: true });
 const databasePath = path.resolve(process.env.STOCKEASY_DB_PATH || path.join(dir, "stockeasy.db"));
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-const db = new Database(databasePath);
+// Node's SQLite module avoids native C++ builds on Windows.
+const sqlite = new DatabaseSync(databasePath);
+const db = {
+  prepare(sql) { return sqlite.prepare(sql); },
+  exec(sql) { return sqlite.exec(sql); },
+  pragma(sql) {
+    if (sql.includes("=")) { sqlite.exec("PRAGMA " + sql); return; }
+    return sqlite.prepare("PRAGMA " + sql).all();
+  },
+  transaction(fn) {
+    return (...args) => {
+      sqlite.exec("BEGIN IMMEDIATE");
+      try {
+        const result = fn(...args);
+        sqlite.exec("COMMIT");
+        return result;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    };
+  }
+};
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(fs.readFileSync(path.join(dir, "schema.sql"), "utf8"));
