@@ -370,7 +370,7 @@ app.post("/api/deliveries/:id/reverse",editor,run(req=>transaction(()=>{
   }
   db.prepare("UPDATE deliveries SET status='Reversed' WHERE id=?").run(delivery.id);
   recalcOrder(delivery.order_id);
-}));
+})));
 app.post("/api/returns",editor,run(req=>transaction(()=>{
   const delivery=find("deliveries",req.body?.deliveryN);
   check(delivery.status==="Active","This delivery cannot accept returns.",409);
