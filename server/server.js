@@ -427,7 +427,7 @@ app.post("/api/returns/:id/reverse", requireEdit("deliveries"), run(req => trans
   return { ok: true };
 })));
 
-app.post("/api/adjustments",requireEdit("stock_history"),run(req=>transaction(()=>{
+app.post("/api/adjustments",requireEdit("products"),run(req=>transaction(()=>{
   const pid=ident(req.body?.pid);
   const qty=Number(req.body?.change);
   check(Number.isSafeInteger(qty)&&qty!==0&&Math.abs(qty)<=100000000,"Enter a non-zero whole-number change.");

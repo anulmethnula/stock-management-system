@@ -262,6 +262,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .movement-table-row:last-child{border-bottom:0}.movement-table-row:not(.movement-table-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
 .movement-table-head{padding-top:11px;padding-bottom:11px;background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:800}
 .movement-source strong,.movement-note strong,.movement-note small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.movement-source strong,.movement-note strong{font-size:10px}.movement-note small{font-size:9px;color:var(--muted);margin-top:3px}
+.inventory-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.inventory-table-row{display:grid;grid-template-columns:minmax(230px,1.55fr) 115px minmax(150px,1fr) 120px 105px 105px 105px 120px;gap:14px;align-items:center;min-width:1120px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:11px;transition:background .2s}
+.inventory-table-row:last-child{border-bottom:0}.inventory-table-row:not(.inventory-table-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
+.inventory-table-head{padding-top:11px;padding-bottom:11px;background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:800}
+.inventory-item{display:flex;align-items:center;gap:11px;min-width:0}.inventory-item .item-picture{width:42px;height:42px;min-width:42px}.inventory-item span,.inventory-item strong,.inventory-item small{display:block;min-width:0}.inventory-item strong,.inventory-item small,.inventory-supplier{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inventory-item strong{font-size:12px}.inventory-item small{font-size:9px;color:var(--muted);margin-top:3px}
+.inventory-supplier{font-size:10px}.inventory-stock strong,.inventory-stock span{display:block}.inventory-stock strong{font-size:15px;color:var(--accent)}.inventory-stock strong small{font-size:9px;color:var(--muted)}.inventory-stock span{font-size:9px;color:var(--muted);margin-top:3px}
 .doc-top{margin-bottom:13px}
 .progress-label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;font-weight:700;gap:14px}
 .bar{height:7px;background:var(--soft);border-radius:100px;overflow:hidden;margin:8px 0 12px}

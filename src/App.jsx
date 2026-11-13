@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Package, Building2, Users, ClipboardList, PackageCheck,
-  Truck, History, Shield, LogOut, Moon, Sun, Plus, Pencil, Trash2,
+  Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
   LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw
@@ -86,7 +86,6 @@ export default function App() {
   const [d, setD] = useState(null), [user, setUser] = useState(null), [loading, setLoading] = useState(true);
   const [page, setPage] = useState("home"), [modal, setModal] = useState(null);
   const [error, setError] = useState(""), [toast, setToast] = useState(""), [busy, setBusy] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("se-theme") || "light");
   const [staff, setStaff] = useState([]);
   const [productFocus,setProductFocus]=useState(null);
   const refresh = async () => {
@@ -95,7 +94,7 @@ export default function App() {
     return data;
   };
   useEffect(() => { refresh().catch(e => { if (e.status !== 401) setError(e.message); }).finally(() => setLoading(false)); }, []);
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("se-theme", theme); }, [theme]);
+  useEffect(() => { delete document.documentElement.dataset.theme; localStorage.removeItem("se-theme"); }, []);
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(""), 3600); return () => clearTimeout(id); }, [toast]);
   useEffect(() => {
     if (page === "staff" && user?.role === "admin") request("/staff").then(result => setStaff(result.staff)).catch(e => setError(e.message));
@@ -160,16 +159,12 @@ export default function App() {
       </nav>
       <div className="side-bottom"><div className="user-meta"><span className="user-avatar">{user.username[0].toUpperCase()}</span>
         <span><strong>{user.username}</strong><small>{user.role === "admin" ? "Administrator" : user.role === "viewer" ? "View only" : "Staff"}</small></span></div>
-        <div className="bottom-buttons"><button className="icon-btn" title="Switch theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-          {theme === "light" ? <Moon size={20}/> : <Sun size={20}/>}</button>
-          <button className="icon-btn" title="Log out" onClick={signOut}><LogOut size={20}/></button></div>
+        <div className="bottom-buttons"><button className="icon-btn" title="Log out" onClick={signOut}><LogOut size={20}/></button></div>
       </div>
     </aside>
     <main className="main">
       <div className="top-strip"><span><span className="live-dot"/> StockEasy Workspace</span>
         <div className="top-actions">
-          <button className="icon-btn mobile-action" aria-label="Switch theme" title="Switch theme" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-            {theme === "light" ? <Moon size={19}/> : <Sun size={19}/>}</button>
           <button className="icon-btn mobile-action" aria-label="Log out" title="Log out" onClick={signOut}><LogOut size={19}/></button>
           <button className="btn ghost sm" onClick={() => refresh().then(() => setToast("All records refreshed.")).catch(e => setError(e.message))}>
             <RefreshCw size={14}/><span>Refresh</span></button>
@@ -296,18 +291,15 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
       <label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label></div>
     <div className="result-count"><strong>{filtered.length}</strong> of {d.products.length} items shown{category!=="all"?` in ${category}`:""}</div>
     {!filtered.length?<Empty title="No matching items" sub="Add an item or change your search."/>:
-      <div className="grid product-grid">{filtered.map((p,i)=><div className="card product-card pop" style={{"--i":i}} key={p.id}>
-        <div className="pic"><Picture p={p} large/></div>
-        <div className="product-main"><div className="product-title"><strong>{p.name}</strong>
-          {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>
-            {stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}</div>
-          <div className="product-meta"><span className="category-tag">{p.category||"Other"}</span><span>{p.sku||"No item code"}</span><span>{branch(p.sid).name}</span></div>
-          <div className="product-metrics"><div><small>Available</small><strong>{p.stock} <em>{p.unit}</em></strong></div>
-            <div><small>Buy price</small><strong>{rs(p.cost)}</strong></div><div><small>Sell price</small><strong>{rs(p.sell)}</strong></div></div></div>
-        {canEdit && <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"product",record:p})}><Pencil size={15}/> Edit</button>
-          {user.role==="admin"&&<button className="btn ghost sm" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={15}/> Update stock</button>}
-          {p.active===1&&<button className="icon-btn danger" title="Remove item" onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>}
-      </div>)}</div>}
+      <div className="inventory-table-wrap"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>
+        {filtered.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div>
+          <span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong>
+          <div className="inventory-stock"><strong>{p.stock} <small>{p.unit}</small></strong><span>Alert at {p.reorder}</span></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>
+          {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}
+          <div className="po-actions">{canEdit&&<button className="icon-btn" title="Edit item" onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}
+            {canEdit&&<button className="icon-btn primary-icon" title="Update stock count" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}
+            {canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>
+        </div>)}</div>}
   </>;
 }
 
