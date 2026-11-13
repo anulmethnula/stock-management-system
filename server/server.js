@@ -58,37 +58,30 @@ const getCookie = req => (req.headers.cookie || "").split(";").map(s => s.trim()
 const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === "1" ? "; Secure" : ""}`;
 const sessionsMs = 7 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
-app.post("/api/login", run(req => {
-  const username = required(req.body?.username, "username", 80);
-  const ip = req.ip || "unknown";
-  const attempt = attempts.get(ip);
-  if (attempt && attempt.until > Date.now() && attempt.count >= 10) fail("Too many attempts. Try again in 15 minutes.", 429);
-  const user = db.prepare("SELECT * FROM staff WHERE username=? COLLATE NOCASE AND active=1").get(username);
-  if (!user || !passwordMatches(String(req.body?.password || ""), user.password_hash)) {
-    const count = (attempt?.until > Date.now() ? attempt.count : 0) + 1;
-    attempts.set(ip, { count, until: Date.now() + 15 * 60 * 1000 });
-    fail("Incorrect username or password.", 401);
-  }
-  attempts.delete(ip);
-  const token = crypto.randomBytes(32).toString("hex");
-  db.prepare("INSERT INTO sessions(token_hash,staff_id,expires_at) VALUES(?,?,?)")
-    .run(tokenHash(token), user.id, Date.now() + sessionsMs);
-  return { user: { id: user.id, username: user.username, role: user.role }, _cookie: token };
-}));
-// Set session cookie for successful login, not in the JSON response.
-const loginHandler = app._router.stack.find(layer => layer.route?.path === "/api/login");
-loginHandler.route.stack[0].handle = (original => (req, res, next) => {
-  const oldJson = res.json.bind(res);
-  res.json = body => {
-    if (body?._cookie) {
-      res.setHeader("Set-Cookie", `${cookieName}=${body._cookie}; ${cookieOpts(req)}`);
-      const { _cookie, ...safe } = body;
-      return oldJson(safe);
+app.post("/api/login", (req, res) => {
+  try {
+    const username = required(req.body?.username, "username", 80);
+    const ip = req.ip || "unknown";
+    const attempt = attempts.get(ip);
+    if (attempt && attempt.until > Date.now() && attempt.count >= 10) fail("Too many attempts. Try again in 15 minutes.", 429);
+    const user = db.prepare("SELECT * FROM staff WHERE username=? COLLATE NOCASE AND active=1").get(username);
+    if (!user || !passwordMatches(String(req.body?.password || ""), user.password_hash)) {
+      const count = (attempt?.until > Date.now() ? attempt.count : 0) + 1;
+      attempts.set(ip, { count, until: Date.now() + 15 * 60 * 1000 });
+      fail("Incorrect username or password.", 401);
     }
-    return oldJson(body);
-  };
-  return original(req, res, next);
-})(loginHandler.route.stack[0].handle);
+    attempts.delete(ip);
+    const token = crypto.randomBytes(32).toString("hex");
+    db.prepare("INSERT INTO sessions(token_hash,staff_id,expires_at) VALUES(?,?,?)")
+      .run(tokenHash(token), user.id, Date.now() + sessionsMs);
+    res.cookie(cookieName, token, {
+      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge: sessionsMs
+    });
+    res.json({ user: { id: user.id, username: user.username, role: user.role } });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.status ? e.message : "Login failed." });
+  }
+});
 
 app.use("/api", (req, res, next) => {
   const raw = getCookie(req);
@@ -105,8 +98,7 @@ app.post("/api/logout", run(req => {
   const token = getCookie(req);
   if (token) db.prepare("DELETE FROM sessions WHERE token_hash=?").run(tokenHash(token));
   return { ok: true };
-}), (req, res) => res.setHeader("Set-Cookie", `${cookieName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict`));
-
+}));
 // Single page load: include linked documents and their lines, but never password hashes.
 app.get("/api/all", run(req => {
   const poItems = db.prepare("SELECT po_id,product_id pid,qty,cost,received FROM po_items").all();
@@ -149,7 +141,7 @@ function validateLines(lines, kind, key = "pid") {
     check(!ids.has(pid), "The same item was added twice.");
     ids.add(pid);
     const p = find("products", pid);
-    check(p.active || kind === "receiving" || kind === "dispatch", `${p.name} is archived.`);
+    check(p.active || ["receiving","dispatch","return"].includes(kind), `${p.name} is archived.`);
     return { pid, qty: amount(line.qty, "Quantity", 1), product: p, cost: line.cost, price: line.price };
   });
 }
@@ -402,6 +394,20 @@ app.post("/api/returns",editor,run(req=>transaction(()=>{
   }
   return {code:document};
 })));
+app.post("/api/returns/:id/reverse", editor, run(req => transaction(() => {
+  const ret = db.prepare("SELECT * FROM customer_returns WHERE id=?").get(ident(req.params.id));
+  check(ret, "Return not found.", 404);
+  check(ret.status === "Active", "This return is already reversed.", 409);
+  const reason = required(req.body?.reason, "reason", 500);
+  const lines = db.prepare("SELECT product_id pid,qty FROM return_lines WHERE return_id=?").all(ret.id);
+  for (const l of lines) {
+    changeStock(l.pid, -l.qty);
+    logStock(l.pid, -l.qty, "Customer return reversed", ret.code, reason, req.user.username);
+  }
+  db.prepare("UPDATE customer_returns SET status='Reversed' WHERE id=?").run(ret.id);
+  return { ok: true };
+})));
+
 app.post("/api/adjustments",admin,run(req=>transaction(()=>{
   const pid=ident(req.body?.pid);
   const qty=Number(req.body?.change);
