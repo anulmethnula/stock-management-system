@@ -6,7 +6,9 @@ import { fileURLToPath } from "url";
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "database");
 fs.mkdirSync(dir, { recursive: true });
-const db = new Database(path.join(dir, "stockeasy.db"));
+const databasePath = path.resolve(process.env.STOCKEASY_DB_PATH || path.join(dir, "stockeasy.db"));
+fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+const db = new Database(databasePath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(fs.readFileSync(path.join(dir, "schema.sql"), "utf8"));
