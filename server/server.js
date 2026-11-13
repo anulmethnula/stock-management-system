@@ -4,6 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import db, { passwordHash, passwordMatches } from "./db.js";
+import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -256,6 +257,32 @@ function poPayload(b) {
   const lines = validateLines(b.items, "order").map(l => ({ ...l, cost: money(l.cost ?? l.product.cost, "Buying price") }));
   return { sid, lines };
 }
+// Bulk entry: download a real .xlsx workbook, then preview an uploaded workbook.
+// Import never changes stock and never creates a PO until the user confirms the order.
+app.get("/api/po-template", (req,res) => {
+  const access=cleanPermissions(req.user.permissions,req.user.role).purchase_orders;
+  if(access==="none") return res.status(403).json({error:"You do not have access to purchase orders."});
+  try {
+    const products=db.prepare("SELECT id,sku,name,unit,cost FROM products WHERE active=1 ORDER BY name,id").all();
+    const workbook=buildPOTemplate(products);
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",'attachment; filename="StockEasy_PO_Template.xlsx"');
+    res.setHeader("Cache-Control","no-store");
+    res.send(workbook);
+  } catch(error) {
+    console.error("Excel template error:",error);
+    res.status(500).json({error:"Could not create the template. Please try again."});
+  }
+});
+app.post("/api/po-import", requireEdit("purchase_orders"),
+  express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
+  run(req=>{
+    check(Buffer.isBuffer(req.body)&&req.body.length>0,"Please select a .xlsx file to upload.");
+    const products=db.prepare("SELECT id,sku,name,active,cost FROM products").all();
+    const items=parsePOUpload(req.body,products);
+    return {items,count:items.length,total:items.reduce((n,l)=>n+l.qty*l.cost,0)};
+  })
+);
 app.post("/api/pos", requireEdit("purchase_orders"), run(req => transaction(() => {
   const { sid, lines } = poPayload(req.body || {});
   const id = db.prepare("INSERT INTO purchase_orders(code,supplier_id,date) VALUES('',?,?)").run(sid, today()).lastInsertRowid;
