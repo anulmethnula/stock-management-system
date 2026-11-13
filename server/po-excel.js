@@ -63,7 +63,7 @@ function buildZip(entries) {
   return Buffer.concat([...local,...central,eocd]);
 }
 const headers=["Product ID","Item Code","Item Name","Unit","Quantity","Unit Cost (Rs)"];
-export function buildPOTemplate(products) {
+export function buildPOTemplate(products, quantitiesById = {}) {
   if(products.length>1000) throw new Error("Too many items to export. Contact the admin.");
   const rowCount=Math.max(2,products.length+1);
   const rows=['<row r="1" ht="27" customHeight="1">'+headers.map((value,i)=>xmlCell("ABCDEF"[i]+"1",value,1)).join("")+'</row>'];
@@ -74,7 +74,7 @@ export function buildPOTemplate(products) {
       +xmlCell("B"+n,p.sku||"",0)
       +xmlCell("C"+n,p.name,0)
       +xmlCell("D"+n,p.unit||"pieces",0)
-      +'<c r="E'+n+'" s="2"/>'
+      +(quantitiesById[p.id] !== undefined ? xmlCell("E"+n,Number(quantitiesById[p.id]),2) : '<c r="E'+n+'" s="2"/>')
       +xmlCell("F"+n,Number(p.cost)||0,3)
       +'</row>');
   });
