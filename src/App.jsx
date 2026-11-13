@@ -17,7 +17,7 @@ const request = async (path, method = "GET", body) => {
   return data;
 };
 const rs = n => "Rs " + Number(n || 0).toLocaleString("en-LK", { maximumFractionDigits: 2 });
-const one = (arr, id) => arr.find(x => Number(x.id ?? x.n) === Number(id));
+const one = (arr, id) => arr.find(x => Number(x.n ?? x.id) === Number(id));
 const today = date => date ? String(date).slice(0, 10) : "—";
 const stockLevel = p => p.stock <= 0 ? "out" : p.stock <= p.reorder ? "low" : "ok";
 const isClosed = s => ["Received", "Cancelled", "Part cancelled", "Dispatched", "Reversed"].includes(s);
@@ -384,6 +384,9 @@ function Deliveries({d,customer,product,setModal,canEdit,reason}) {
           <div className="mute">{today(r.date)} · Delivery {one(d.deliveries,r.deliveryN)?.id}</div></div><State value={r.status}/></div>
         <div className="doc-items">{r.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
         <p className="mute">Reason: {r.note}</p>
+        {canEdit&&r.status==="Active"&&<div className="card-actions"><button className="btn ghost sm" onClick={()=>reason("Reverse "+r.id,
+          "This removes the returned quantity from stock and keeps a record of the correction.","/returns/"+r.n+"/reverse","deliveries")}>
+          <RotateCcw size={15}/> Reverse return</button></div>}
       </div>)}</div>)}
   </>;
 }
