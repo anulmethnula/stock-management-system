@@ -569,7 +569,8 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
       setImportError(error.message||"Could not read the Excel file.");
     } finally {setImporting(false);}
   };
-  const items=active(d.products).filter(p=>p.name.toLowerCase().includes(query.toLowerCase()));
+  const items=active(d.products).filter(p=>p.name.toLowerCase().includes(query.toLowerCase()))
+    .sort((a,b)=>Number(number(quantities[b.id])>0)-Number(number(quantities[a.id])>0)||a.name.localeCompare(b.name));
   const lines=d.products.filter(p=>number(quantities[p.id])>0).map(p=>({pid:p.id,qty:number(quantities[p.id]),
     [purchase?"cost":"price"]:number(prices[p.id]??(purchase?p.cost:p.sell))}));
   const total=lines.reduce((s,l)=>s+l.qty*(purchase?l.cost:l.price),0);
