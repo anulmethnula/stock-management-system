@@ -4,7 +4,7 @@ import {
   Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
-  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload
+  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -24,15 +24,15 @@ const isClosed = s => ["Received", "Cancelled", "Part cancelled", "Dispatched", 
 const active = arr => arr.filter(x => x.active);
 const number = value => Number(value) || 0;
 const Icons = { home: LayoutDashboard, products: Package, branches: Building2, customers: Users,
-  pos: ClipboardList, grns: PackageCheck, orders: ShoppingBag, deliveries: Truck, history: History, staff: Shield };
+  pos: ClipboardList, grns: PackageCheck, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
 const MENU = [
   ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
   ["customers", "Customers"], ["pos", "Stock requests"], ["grns", "Goods received"],
-  ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["staff", "Staff"]
+  ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
 ];
 const PRODUCT_CATEGORIES = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
-const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",staff:"staff"};
-const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"]];
+const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
+const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
 const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="viewer"?"view":"edit"]));
 const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||(feature==="staff"?"none":user?.role==="viewer"?"view":"edit");
 
@@ -180,8 +180,10 @@ export default function App() {
         {page === "orders" && <CustomerOrders {...ctx} />}
         {page === "deliveries" && <Deliveries {...ctx} />}
         {page === "history" && <StockHistory {...ctx} />}
+        {page === "reports" && <Reports {...ctx} />}
         {page === "staff" && <Staff {...ctx} staff={staff} />}
       </div>
+      <footer className="main-footer">Developed by <a href="https://it.supuncompanies.com/" target="_blank" rel="noopener noreferrer">Supun IT Solutions</a></footer>
     </main>
     {modal && <Dialog modal={modal} ctx={ctx} staff={staff} close={() => setModal(null)}/>}
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}</div>}
@@ -294,7 +296,7 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
       <div className="inventory-table-wrap"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>
         {filtered.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div>
           <span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong>
-          <div className="inventory-stock"><strong>{p.stock} <small>{p.unit}</small></strong><span>Alert at {p.reorder}</span></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>
+          <div className="inventory-stock"><strong>{p.stock} <small>{p.unit}</small></strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>
           {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}
           <div className="po-actions">{canEdit&&<button className="icon-btn" title="Edit item" onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}
             {canEdit&&<button className="icon-btn primary-icon" title="Update stock count" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}
@@ -310,19 +312,19 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
   return <>
     <SectionHeading title="Stock requests (PO)" sub="Request goods from any supplier. A PO does not add stock until a GRN is saved."
       action={canEdit?()=>setModal({type:"po"}):null} label="Request stock"/>
-    <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder="Search PO, supplier or item…"/>
+    <div className="list-tools po-request-tools"><SearchBox value={q} change={setQ} placeholder="Search PO, supplier or item…"/>
       <select className="filter-select" value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} aria-label="Filter by supplier"><option value="all">All suppliers</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to receive</option><option value="Ordered">Ordered</option><option value="Part received">Part received</option><option value="Received">Received</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
     <div className="result-count"><strong>{list.length}</strong> of {d.pos.length} stock requests shown</div>
     {!list.length?<Empty Icon={ClipboardList} title="No matching stock requests" sub="Change the filters or create a new request."/>:
-      <div className="po-table-wrap"><div className="po-table-head po-table-row"><span>PO / Date</span><span>Supplier</span><span>Items</span><span>Receiving progress</span><span>Total</span><span>Status</span><span>Actions</span></div>
-        {list.map(po=>{const qty=po.items.reduce((a,x)=>a+x.qty,0),received=po.items.reduce((a,x)=>a+x.received,0),total=po.items.reduce((a,x)=>a+x.qty*x.cost,0),percent=qty?Math.round(received/qty*100):0;return <div className="po-table-row" key={po.n}>
-          <div className="po-ref"><strong>{po.id}</strong><small>{today(po.date)}</small></div>
-          <div className="po-supplier"><span className="row-icon"><ClipboardList size={18}/></span><strong>{branch(po.sid).name}</strong></div>
-          <div className="po-item-summary"><strong>{po.items.length} item{po.items.length===1?"":"s"}</strong><small>{po.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{po.items.length>2?` +${po.items.length-2} more`:""}</small></div>
-          <div className="po-progress"><div><strong>{received}/{qty}</strong><small>{qty-received} remaining</small><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div></div>
-          <strong className="po-total">{rs(total)}</strong><State value={po.status}/>
-          <div className="po-actions"><button className="icon-btn" title="View all details" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={17}/></button>
+      <div className="po-request-table"><div className="po-request-head po-request-row"><span>PO / Date</span><span>Supplier</span><span>Items</span><span>Receiving Progress</span><span>Status</span><span>Actions</span></div>
+        {list.map(po=>{const qty=po.items.reduce((a,x)=>a+x.qty,0),received=po.items.reduce((a,x)=>a+x.received,0),percent=qty?Math.round(received/qty*100):0;return <div className="po-request-row" key={po.n}>
+          <div className="po-ref po-request-ref"><strong>{po.id}</strong><small>{today(po.date)}</small></div>
+          <div className="po-supplier po-request-supplier"><span className="row-icon"><ClipboardList size={17}/></span><strong>{branch(po.sid).name}</strong></div>
+          <div className="po-item-summary po-request-items"><strong>{po.items.length} item{po.items.length===1?"":"s"} · {qty} unit{qty===1?"":"s"}</strong><small>{po.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{po.items.length>2?` +${po.items.length-2} more`:""}</small></div>
+          <div className="po-request-progress"><div><strong>{received} received</strong><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div><small>{qty-received} remaining of {qty}</small></div>
+          <div className="po-request-status"><State value={po.status}/></div>
+          <div className="po-request-actions"><button className="icon-btn" aria-label="View PO details" title="View PO details" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={16}/></button>
             {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn primary-icon" title="Receive goods" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={17}/></button>}
             {canEdit&&po.status==="Ordered"&&<button className="icon-btn" title="Edit request" onClick={()=>setModal({type:"po",record:po})}><Pencil size={16}/></button>}
             {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn danger" title="Cancel remaining request" onClick={()=>confirm("Cancel this stock request?","No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={17}/></button>}</div>
@@ -342,16 +344,16 @@ function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
       <div className="list-tools grn-tools"><SearchBox value={q} change={setQ} placeholder="Search GRN, PO, supplier or item…"/>
         <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter GRNs by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Reversed">Reversed</option></select></div>
       <div className="result-count"><strong>{list.length}</strong> of {d.grns.length} GRNs shown</div>
-      {!list.length?<Empty Icon={Search} title="No matching GRNs" sub="Change the search text or status filter."/>:<div className="grn-table-wrap"><div className="grn-table-head grn-table-row"><span>GRN / Date</span><span>Purchase order</span><span>Supplier</span><span>Received items</span><span>Received by / Note</span><span>Status</span><span>Actions</span></div>
+      {!list.length?<Empty Icon={Search} title="No matching GRNs" sub="Change the search text or status filter."/>:<div className="grn-table-wrap"><div className="grn-table-head grn-table-row"><span>GRN / Date</span><span>PO Number</span><span>Supplier</span><span>Received Items</span><span>Received By</span><span>Status</span><span>Actions</span></div>
         {list.map(g=>{const totalQty=g.lines.reduce((sum,l)=>sum+l.qty,0);return <div className="grn-table-row" key={g.n}>
           <div className="po-ref grn-cell"><strong>{g.id}</strong><small>{today(g.date)}</small></div>
-          <div className="grn-po grn-cell"><strong>{g.poId}</strong><small>Purchase order</small></div>
-          <div className="grn-supplier grn-cell"><strong>{branch(g.sid).name}</strong><small>Supplier</small></div>
+          <div className="grn-po grn-cell"><strong>{g.poId}</strong></div>
+          <div className="grn-supplier grn-cell"><strong>{branch(g.sid).name}</strong></div>
           <div className="po-item-summary grn-cell"><strong>{totalQty} unit{totalQty===1?"":"s"} · {g.lines.length} item{g.lines.length===1?"":"s"}</strong><small>{g.lines.slice(0,2).map(l=>`${product(l.pid).name} × ${l.qty}`).join(", ")}{g.lines.length>2?` +${g.lines.length-2} more`:""}</small></div>
-          <div className="movement-note grn-cell"><strong>{g.by||"Staff"}</strong><small>{g.note||"No note"}</small></div><div className="grn-status grn-cell"><State value={g.status}/><small>GRN status</small></div>
+          <div className="movement-note grn-cell"><strong>{g.by||"Staff"}</strong>{g.note&&<small>{g.note}</small>}</div><div className="grn-status grn-cell"><State value={g.status}/></div>
           <div className="grn-actions grn-cell"><div><button className="grn-action view" title="Open and print this GRN" onClick={()=>setModal({type:"view-grn",record:g})}><Eye size={14}/><span>View</span></button>
             {canEdit&&g.status==="Active"&&<button className="grn-action reverse" title="Reverse this GRN and remove its quantities from stock" onClick={()=>reason("Reverse "+g.id,
-              "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}><RotateCcw size={14}/><span>Reverse</span></button>}</div><small>Manage GRN</small></div>
+              "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}><RotateCcw size={14}/><span>Reverse</span></button>}</div></div>
         </div>})}</div>}</>}
   </>;
 }
@@ -363,18 +365,18 @@ function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
   return <>
     <SectionHeading title="Customer orders" sub="Record goods requested by customer companies before sending them."
       action={canEdit?()=>setModal({type:"order"}):null} label="New customer order"/>
-    <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
+    <div className="list-tools po-request-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to send</option><option value="Open">Open</option><option value="Part dispatched">Part dispatched</option><option value="Dispatched">Dispatched</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
     <div className="result-count"><strong>{list.length}</strong> of {d.orders.length} customer orders shown</div>
     {!list.length?<Empty Icon={ShoppingBag} title="No matching customer orders" sub="Change the filters or create a new order."/>:
-      <div className="po-table-wrap"><div className="po-table-head po-table-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch progress</span><span>Total</span><span>Status</span><span>Actions</span></div>
-        {list.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),total=o.items.reduce((s,l)=>s+l.qty*l.price,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-table-row" key={o.n}>
-          <div className="po-ref"><strong>{o.id}</strong><small>{today(o.date)}</small></div>
-          <div className="po-supplier"><span className="row-icon"><ShoppingBag size={18}/></span><strong>{customer(o.cid).name}</strong></div>
-          <div className="po-item-summary"><strong>{o.items.length} item{o.items.length===1?"":"s"}</strong><small>{o.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{o.items.length>2?` +${o.items.length-2} more`:""}</small></div>
-          <div className="po-progress"><div><strong>{shipped}/{qty}</strong><small>{qty-shipped} remaining</small><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div></div>
-          <strong className="po-total">{rs(total)}</strong><State value={o.status}/><div className="po-actions"><button className="icon-btn" title="View all details" onClick={()=>setModal({type:"view-order",record:o})}><Eye size={17}/></button>
+      <div className="po-request-table"><div className="po-request-head po-request-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch Progress</span><span>Status</span><span>Actions</span></div>
+        {list.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-request-row" key={o.n}>
+          <div className="po-ref po-request-ref"><strong>{o.id}</strong><small>{today(o.date)}</small></div>
+          <div className="po-supplier po-request-supplier"><span className="row-icon"><ShoppingBag size={17}/></span><strong>{customer(o.cid).name}</strong></div>
+          <div className="po-item-summary po-request-items"><strong>{o.items.length} item{o.items.length===1?"":"s"} · {qty} unit{qty===1?"":"s"}</strong><small>{o.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{o.items.length>2?` +${o.items.length-2} more`:""}</small></div>
+          <div className="po-request-progress"><div><strong>{shipped} dispatched</strong><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div><small>{qty-shipped} remaining of {qty}</small></div>
+          <div className="po-request-status"><State value={o.status}/></div><div className="po-request-actions"><button className="icon-btn" aria-label="View order details" title="View order details" onClick={()=>setModal({type:"view-order",record:o})}><Eye size={16}/></button>
             {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn primary-icon" title="Send goods" onClick={()=>setModal({type:"dispatch",order:o})}><Truck size={17}/></button>}
             {canEdit&&o.status==="Open"&&<button className="icon-btn" title="Edit order" onClick={()=>setModal({type:"order",record:o})}><Pencil size={16}/></button>}
             {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn danger" title="Cancel remaining order" onClick={()=>confirm("Cancel customer order?","Any goods already sent will stay in delivery history.","/customer-orders/"+o.n)}><X size={17}/></button>}</div>
@@ -411,21 +413,84 @@ function Deliveries({d,customer,product,setModal,canEdit,reason}) {
 }
 
 function StockHistory({d,product,user,setModal}) {
-  const [q,setQ]=useState("");
-  const rows=d.movements.filter(m=>[product(m.pid).name,m.type,m.reference,m.actor,m.note].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const [q,setQ]=useState(""),[typeFilter,setTypeFilter]=useState("all"),[itemFilter,setItemFilter]=useState("all"),[from,setFrom]=useState(""),[to,setTo]=useState(""),[direction,setDirection]=useState("all"),[page,setPage]=useState(1);
+  const movementGroup=type=>/reversed/i.test(type)?"Reversal":/goods received/i.test(type)?"GRN":/customer return/i.test(type)?"Return":/deliver/i.test(type)?"Delivery":"Adjustment";
+  const relatedDocument=m=>{if(/^GRN-/i.test(m.reference))return {type:"view-grn",record:d.grns.find(x=>x.id===m.reference)};if(/^DEL-/i.test(m.reference))return {type:"view-delivery",record:d.deliveries.find(x=>x.id===m.reference)};if(/^RET-/i.test(m.reference))return {type:"view-return",record:d.returns.find(x=>x.id===m.reference)};return null;};
+  const rows=d.movements.filter(m=>{
+    const date=String(m.at||"").slice(0,10),group=movementGroup(m.type);
+    return [product(m.pid).name,m.reference,m.actor].join(" ").toLowerCase().includes(q.toLowerCase())
+      &&(typeFilter==="all"||group===typeFilter)&&(itemFilter==="all"||Number(itemFilter)===m.pid)
+      &&(!from||date>=from)&&(!to||date<=to)&&(direction==="all"||(direction==="in"?m.qty>0:m.qty<0));
+  });
+  const pageSize=20,totalPages=Math.max(1,Math.ceil(rows.length/pageSize)),currentPage=Math.min(page,totalPages),visible=rows.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  useEffect(()=>setPage(1),[q,typeFilter,itemFilter,from,to,direction]);
+  const reset=()=>{setQ("");setTypeFilter("all");setItemFilter("all");setFrom("");setTo("");setDirection("all");};
   return <>
     <SectionHeading title="Stock history" sub="A permanent record of goods received, sent out, returned and corrected."
       action={user.role==="admin"?()=>setModal({type:"adjust"}):null} label="Correct stock" Icon={RefreshCw}/>
-    <SearchBox value={q} change={setQ} placeholder="Search items, documents, people…"/>
+    <div className="stock-history-filters"><div className="stock-history-search stock-history-field"><span>Search</span><SearchBox value={q} change={setQ} placeholder="Search item, document or staff…"/></div>
+      <label className="stock-history-field"><span>Movement Type</span><select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} aria-label="Filter by movement type"><option value="all">All movement types</option><option value="GRN">GRN</option><option value="Delivery">Delivery</option><option value="Return">Return</option><option value="Adjustment">Adjustment</option><option value="Reversal">Reversal</option></select></label>
+      <label className="stock-history-field"><span>Item</span><select value={itemFilter} onChange={e=>setItemFilter(e.target.value)} aria-label="Filter by item"><option value="all">All items</option>{[...d.products].sort((a,b)=>a.name.localeCompare(b.name)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label><span>From</span><input type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)}/></label>
+      <label><span>To</span><input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)}/></label>
+      <label className="stock-history-field"><span>Direction</span><select value={direction} onChange={e=>setDirection(e.target.value)} aria-label="Filter by stock direction"><option value="all">Stock in & out</option><option value="in">Stock in</option><option value="out">Stock out</option></select></label>
+      <button className="btn ghost stock-history-reset" type="button" onClick={reset}>Reset filters</button></div>
+    <div className="stock-history-count"><strong>{rows.length}</strong> matching record{rows.length===1?"":"s"}</div>
     {!rows.length?<Empty Icon={History} title="No stock movements" sub="Movements appear after stock is added, received, sent or corrected."/>:
-      <div className="card history-wrap"><div className="history-head history-row"><span>Item / action</span><span>Reference</span><span>Quantity</span><span>Recorded by / date</span></div>
-      {rows.map(m=><div className="history-row" key={m.id}><div className="history-item"><span className={"delta-icon "+(m.qty>=0?"plus":"minus")}>
-        {m.qty>=0?<ArrowDownLeft size={18}/>:<ArrowUpRight size={18}/>}</span>
-        <div><strong>{product(m.pid).name}</strong><small>{m.type}{m.note?" · "+m.note:""}</small></div></div>
-        <div className="history-ref">{m.reference}</div><div className={"history-qty "+(m.qty>=0?"positive":"negative")}>{m.qty>0?"+":""}{m.qty}</div>
-        <div className="mute history-date">{m.actor}<small>{m.at}</small></div></div>)}</div>}
+      <><div className="stock-history-table"><div className="stock-history-head stock-history-row"><span>Date & Time</span><span>Item</span><span>Movement Type</span><span>Reference</span><span>Stock In</span><span>Stock Out</span><span>Recorded By</span><span>Actions</span></div>
+      {visible.map(m=>{const doc=relatedDocument(m),date=String(m.at||"").replace("T"," ");return <div className="stock-history-row" key={m.id}>
+        <div className="stock-history-time"><strong>{date.slice(0,10)}</strong><small>{date.slice(11,16)||"—"}</small></div>
+        <div className="stock-history-item"><span className={"delta-icon "+(m.qty>0?"plus":"minus")}>{m.qty>0?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span><div><strong>{product(m.pid).name}</strong>{m.note&&<small>{m.note}</small>}</div></div>
+        <div><span className="stock-history-type">{movementGroup(m.type)}</span><small className="stock-history-event">{m.type}</small></div>
+        <div>{doc?.record?<button className="stock-history-reference" onClick={()=>setModal(doc)}>{m.reference}</button>:<span className="stock-history-reference plain">{m.reference}</span>}</div>
+        <strong className="stock-history-in">{m.qty>0?`+${m.qty}`:"—"}</strong><strong className="stock-history-out">{m.qty<0?m.qty:"—"}</strong>
+        <div className="stock-history-actor">{m.actor||"System"}</div><div className="stock-history-actions">{doc?.record?<button className="icon-btn" title={"View "+m.reference} aria-label={"View "+m.reference} onClick={()=>setModal(doc)}><Eye size={16}/></button>:<span>—</span>}</div>
+      </div>})}</div>
+      {totalPages>1&&<div className="stock-history-pagination"><button className="btn ghost sm" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page <strong>{currentPage}</strong> of {totalPages}</span><button className="btn ghost sm" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}</>}
     {d.movements.length>=1000&&<p className="mute">Showing the latest 1,000 movements.</p>}
   </>;
+}
+
+const REPORT_TYPES = [
+  ["stock","Stock Summary Report",Package],["po","Stock Requests (PO) Report",ClipboardList],["grn","Goods Received (GRN) Report",PackageCheck],["orders","Customer Orders Report",ShoppingBag],
+  ["delivery","Deliveries & Returns Report",Truck],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
+];
+function Reports({d,branch,customer,product}) {
+  const emptyFilters={from:"",to:"",sid:"all",cid:"all",pid:"all",status:"all"};
+  const [type,setType]=useState("stock"),[filters,setFilters]=useState(emptyFilters),[report,setReport]=useState(null);
+  const setFilter=(key,value)=>setFilters(o=>({...o,[key]:value})),config=REPORT_TYPES.find(x=>x[0]===type);
+  const usesDate=["po","grn","orders","delivery","movement"].includes(type),usesSupplier=["stock","po","grn","suppliers"].includes(type),usesCustomer=["orders","delivery","customers"].includes(type),usesItem=["stock","po","grn","orders","delivery","movement"].includes(type),usesStatus=!['suppliers','customers'].includes(type);
+  const movementGroup=t=>/reversed/i.test(t)?"Reversal":/goods received/i.test(t)?"GRN":/customer return/i.test(t)?"Return":/deliver/i.test(t)?"Delivery":"Adjustment";
+  const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),delivery:[["Delivery","Delivery"],["Return","Return"],["Active","Active"],["Reversed","Reversed"]],movement:["GRN","Delivery","Return","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
+  const dateOk=date=>(!filters.from||String(date).slice(0,10)>=filters.from)&&(!filters.to||String(date).slice(0,10)<=filters.to),hasItem=lines=>filters.pid==="all"||lines.some(l=>l.pid===Number(filters.pid)),selectedLines=lines=>lines.filter(l=>filters.pid==="all"||l.pid===Number(filters.pid)),sumQty=lines=>selectedLines(lines).reduce((n,l)=>n+l.qty,0);
+  const build=()=>{
+    let columns=[],rows=[],summary=[];
+    if(type==="stock"){
+      const docs=d.products.filter(p=>(filters.sid==="all"||p.sid===Number(filters.sid))&&(filters.pid==="all"||p.id===Number(filters.pid))&&(filters.status==="all"||(filters.status==="active"?p.active===1:filters.status==="archived"?p.active!==1:filters.status==="out"?p.stock<=0:p.stock>0&&p.stock<=p.reorder)));
+      columns=["Item","Code","Category","Supplier","Current Stock","Reorder Level","Status"];rows=docs.map(p=>[p.name,p.sku||"—",p.category||"—",branch(p.sid).name,`${p.stock} ${p.unit}`,p.reorder,p.active!==1?"Archived":p.stock<=0?"Out of stock":p.stock<=p.reorder?"Low stock":"Active"]);summary=[["Items",docs.length],["Total units",docs.reduce((n,p)=>n+p.stock,0)],["Low / out",docs.filter(p=>p.stock<=p.reorder).length]];
+    } else if(type==="po"){
+      const docs=d.pos.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["PO","Date","Supplier","Items","Requested","Received","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),r=lines.reduce((n,l)=>n+l.received,0);return[x.id,today(x.date),branch(x.sid).name,lines.map(l=>product(l.pid).name).join(", "),q,r,q-r,x.status]});summary=[["Requests",docs.length],["Requested",rows.reduce((n,r)=>n+Number(r[4]),0)],["Received",rows.reduce((n,r)=>n+Number(r[5]),0)]];
+    } else if(type==="grn"){
+      const docs=d.grns.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["GRN","Date","PO","Supplier","Items","Quantity","Received By","Status"];rows=docs.map(x=>[x.id,today(x.date),x.poId,branch(x.sid).name,selectedLines(x.lines).map(l=>product(l.pid).name).join(", "),sumQty(x.lines),x.by,x.status]);summary=[["GRNs",docs.length],["Units received",rows.reduce((n,r)=>n+Number(r[5]),0)],["Active",docs.filter(x=>x.status==="Active").length]];
+    } else if(type==="orders"){
+      const docs=d.orders.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["Order","Date","Customer","Items","Ordered","Dispatched","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),sent=lines.reduce((n,l)=>n+l.dispatched,0);return[x.id,today(x.date),customer(x.cid).name,lines.map(l=>product(l.pid).name).join(", "),q,sent,q-sent,x.status]});summary=[["Orders",docs.length],["Ordered",rows.reduce((n,r)=>n+Number(r[4]),0)],["Dispatched",rows.reduce((n,r)=>n+Number(r[5]),0)]];
+    } else if(type==="delivery"){
+      const all=[...d.deliveries.map(x=>({...x,kind:"Delivery"})),...d.returns.map(x=>({...x,kind:"Return"}))],docs=all.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.lines)&&(filters.status==="all"||(filters.status===x.kind||filters.status===x.status)));columns=["Document","Date","Type","Customer","Items","Quantity","Status"];rows=docs.map(x=>[x.id,today(x.date),x.kind,customer(x.cid).name,selectedLines(x.lines).map(l=>product(l.pid).name).join(", "),sumQty(x.lines),x.status]);summary=[["Documents",docs.length],["Delivered",docs.filter(x=>x.kind==="Delivery").reduce((n,x)=>n+sumQty(x.lines),0)],["Returned",docs.filter(x=>x.kind==="Return").reduce((n,x)=>n+sumQty(x.lines),0)]];
+    } else if(type==="movement"){
+      const docs=d.movements.filter(x=>dateOk(x.at)&&(filters.pid==="all"||x.pid===Number(filters.pid))&&(filters.status==="all"||movementGroup(x.type)===filters.status));columns=["Date & Time","Item","Movement Type","Reference","Stock In","Stock Out","Recorded By"];rows=docs.map(x=>[x.at,product(x.pid).name,x.type,x.reference,x.qty>0?x.qty:"—",x.qty<0?Math.abs(x.qty):"—",x.actor]);summary=[["Movements",docs.length],["Stock in",docs.filter(x=>x.qty>0).reduce((n,x)=>n+x.qty,0)],["Stock out",Math.abs(docs.filter(x=>x.qty<0).reduce((n,x)=>n+x.qty,0))]];
+    } else if(type==="suppliers"){
+      const docs=d.branches.filter(x=>filters.sid==="all"||x.id===Number(filters.sid));columns=["Supplier / Branch","Type","Contact","Phone","Location","Status"];rows=docs.map(x=>[x.name,x.supplier_type||"—",x.contact||"—",x.phone||"—",x.location||"—",x.active===1?"Active":"Archived"]);summary=[["Suppliers",docs.length],["Active",docs.filter(x=>x.active===1).length],["Archived",docs.filter(x=>x.active!==1).length]];
+    } else {const docs=d.customers.filter(x=>filters.cid==="all"||x.id===Number(filters.cid));columns=["Customer Company","Type","Contact","Phone","Address","Status"];rows=docs.map(x=>[x.name,x.customer_type||"—",x.contact||"—",x.phone||"—",x.address||"—",x.active===1?"Active":"Archived"]);summary=[["Customers",docs.length],["Active",docs.filter(x=>x.active===1).length],["Archived",docs.filter(x=>x.active!==1).length]];}
+    const chosen=[];if(filters.from)chosen.push(`From ${filters.from}`);if(filters.to)chosen.push(`To ${filters.to}`);if(filters.sid!=="all")chosen.push(branch(Number(filters.sid)).name);if(filters.cid!=="all")chosen.push(customer(Number(filters.cid)).name);if(filters.pid!=="all")chosen.push(product(Number(filters.pid)).name);if(filters.status!=="all")chosen.push(filters.status);
+    setReport({title:config[1],columns,rows,summary,filters:chosen.length?chosen.join(" · "):"All records",generated:new Date().toLocaleString("en-LK")});
+  };
+  const safe=v=>String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"),html=()=>`<!doctype html><html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#10251f;padding:24px}h1{color:#147a5b;margin-bottom:4px}p{color:#687b74}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #dfe9e4;padding:8px;text-align:left}th{background:#edf5f1}.meta{display:flex;justify-content:space-between}</style></head><body><h1>${safe(report.title)}</h1><div class="meta"><strong>Supun Group of Companies</strong><span>Generated ${safe(report.generated)}</span></div><p>${safe(report.filters)}</p><table><thead><tr>${report.columns.map(x=>`<th>${safe(x)}</th>`).join("")}</tr></thead><tbody>${report.rows.map(row=>`<tr>${row.map(x=>`<td>${safe(x)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  const download=()=>{const url=URL.createObjectURL(new Blob([html()],{type:"application/vnd.ms-excel;charset=utf-8"})),a=document.createElement("a");a.href=url;a.download=report.title.replace(/[^a-z0-9]+/gi,"_")+".xls";a.click();URL.revokeObjectURL(url);},printReport=()=>{const w=window.open("","_blank");if(w){w.document.write(html());w.document.close();setTimeout(()=>w.print(),150);}};
+  return <div className="reports-page"><SectionHeading title="Reports" sub="Generate read-only operational reports from current StockEasy records."/>
+    <div className="report-type-grid">{REPORT_TYPES.map(([key,label,Icon])=><button key={key} className={"report-type-card"+(type===key?" on":"")} onClick={()=>{setType(key);setFilters(emptyFilters);setReport(null);}}><Icon size={19}/><span>{label}</span></button>)}</div>
+    <div className="report-filter-panel"><div className="report-filter-head"><div><span>Report filters</span><strong>{config[1]}</strong></div><button className="btn" onClick={build}><Eye size={16}/> View / Preview</button></div><div className="report-filter-grid">{usesDate&&<><label><span>From</span><input type="date" value={filters.from} max={filters.to||undefined} onChange={e=>setFilter("from",e.target.value)}/></label><label><span>To</span><input type="date" value={filters.to} min={filters.from||undefined} onChange={e=>setFilter("to",e.target.value)}/></label></>}{usesSupplier&&<label><span>Supplier / Branch</span><select value={filters.sid} onChange={e=>setFilter("sid",e.target.value)}><option value="all">All suppliers / branches</option>{d.branches.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesCustomer&&<label><span>Customer Company</span><select value={filters.cid} onChange={e=>setFilter("cid",e.target.value)}><option value="all">All customer companies</option>{d.customers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesItem&&<label><span>Item / Product</span><select value={filters.pid} onChange={e=>setFilter("pid",e.target.value)}><option value="all">All items</option>{d.products.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesStatus&&<label><span>{type==="movement"?"Movement Type":"Status"}</span><select value={filters.status} onChange={e=>setFilter("status",e.target.value)}><option value="all">All {type==="movement"?"movement types":"statuses"}</option>{statuses.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}</div></div>
+    {!report?<div className="report-placeholder"><BarChart3 size={30}/><strong>Select filters and preview the report</strong><span>No data is changed when reports are generated.</span></div>:<div className="report-output"><div className="report-output-head"><div><span>Supun Group of Companies</span><h2>{report.title}</h2><p>{report.filters} · Generated {report.generated}</p></div><div className="report-actions"><button className="btn ghost sm" onClick={download}><Download size={15}/> Download Excel</button><button className="btn ghost sm" onClick={printReport}><Printer size={15}/> Print / Save as PDF</button></div></div><div className="report-summary">{report.summary.map(([label,value])=><div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{!report.rows.length?<Empty Icon={BarChart3} title="No matching records" sub="Change the filters and preview again."/>:<div className="report-table-wrap"><table><thead><tr>{report.columns.map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{report.rows.map((row,i)=><tr key={i}>{row.map((x,j)=><td key={j}>{x}</td>)}</tr>)}</tbody></table></div>}</div>}
+  </div>;
 }
 
 function Staff({ staff,user,setModal,confirm }) {

@@ -60,14 +60,14 @@ const getCookie = req => (req.headers.cookie || "").split(";").map(s => s.trim()
 const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === "1" ? "; Secure" : ""}`;
 const sessionsMs = 7 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
-const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","deliveries","stock_history","staff"];
+const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","deliveries","stock_history","reports","staff"];
 const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : role === "viewer" ? "view" : feature === "staff" ? "none" : "edit"]));
 const cleanPermissions = (value, role = "staff") => {
   if (role === "admin") return defaultPermissions("admin");
   let source = value;
   if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
   const fallback = defaultPermissions(role);
-  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : fallback[feature]]));
+  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
 };
 const publicUser = user => ({ id:user.id, username:user.username, role:user.role, permissions:cleanPermissions(user.permissions,user.role) });
 app.post("/api/login", (req, res) => {
@@ -123,25 +123,25 @@ app.get("/api/all", run(req => {
   const returnLines = db.prepare("SELECT return_id,product_id pid,qty FROM return_lines").all();
   return {
     user: publicUser(req.user),
-    branches: canSee("suppliers","products","purchase_orders","goods_received") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
-    products: canSee("products","purchase_orders","goods_received","customer_orders","deliveries","stock_history") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
-    customers: canSee("customers","customer_orders","deliveries") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
-    pos: canSee("purchase_orders","goods_received") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
+    branches: canSee("suppliers","products","purchase_orders","goods_received","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
+    products: canSee("products","purchase_orders","goods_received","customer_orders","deliveries","stock_history","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    customers: canSee("customers","customer_orders","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
+    pos: canSee("purchase_orders","goods_received","reports") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
       .map(o => ({ ...o, items: poItems.filter(i => i.po_id === o.n) }))
       : [],
-    grns: canSee("goods_received") ? db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
+    grns: canSee("goods_received","reports") ? db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
       .map(g => ({ ...g, lines: grnLines.filter(l => l.grn_id === g.n) }))
       : [],
-    orders: canSee("customer_orders","deliveries") ? db.prepare("SELECT id n,code id,customer_id cid,date,status,note FROM customer_orders ORDER BY n DESC").all()
+    orders: canSee("customer_orders","deliveries","reports") ? db.prepare("SELECT id n,code id,customer_id cid,date,status,note FROM customer_orders ORDER BY n DESC").all()
       .map(o => ({ ...o, items: orderItems.filter(i => i.order_id === o.n) }))
       : [],
-    deliveries: canSee("deliveries") ? db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
+    deliveries: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
       .map(d => ({ ...d, lines: deliveryLines.filter(l => l.delivery_id === d.n) }))
       : [],
-    returns: canSee("deliveries") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
+    returns: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
       .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
       : [],
-    movements: canSee("stock_history") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : []
+    movements: canSee("stock_history","reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : []
   };
 }));
 
