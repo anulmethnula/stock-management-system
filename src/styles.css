@@ -642,6 +642,68 @@ input:focus,select:focus,textarea:focus{background:var(--card);box-shadow:0 0 0 
   .po-request-row> *:not(:last-child),.grn-table-row> *:not(:last-child),.stock-history-row> *:not(:last-child){border-right:0;padding-right:0}
 }
 
+/* Shared page footer — matches StockEasy / Supun IT Solutions visual identity. */
+.main{display:flex;flex-direction:column;min-height:100vh;padding-bottom:0}
+.page{flex:1 0 auto}
+.stockeasy-footer{
+  --footer-wave-back:rgba(73,177,127,.13);
+  --footer-wave-front:rgba(73,177,127,.095);
+  position:relative;isolation:isolate;overflow:hidden;
+  margin:56px calc(-1 * clamp(22px,4.1vw,68px)) 0;
+  border-top:1px solid var(--line);
+  background:linear-gradient(180deg,var(--card),color-mix(in srgb,var(--card) 80%,var(--soft)));
+}
+.stockeasy-footer-waves{
+  display:block;position:absolute;bottom:0;left:0;width:100%;height:82px;
+  pointer-events:none;z-index:0;
+}
+.stockeasy-footer-inner{
+  position:relative;z-index:1;min-height:92px;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:22px;padding:20px clamp(22px,4.1vw,68px);
+}
+.stockeasy-footer-brand{display:flex;align-items:center;gap:14px;min-width:0;flex-wrap:wrap}
+.stockeasy-footer-mark{display:inline-grid;place-items:center;color:var(--accent);flex:none}
+.stockeasy-footer-brand strong{font-size:19px;font-weight:800;letter-spacing:-.055em;color:var(--fg);white-space:nowrap}
+.stockeasy-footer-divider{height:23px;width:1px;background:var(--muted);opacity:.45;margin:0 7px;flex:none}
+.stockeasy-footer-description{font-size:12px;font-weight:650;color:var(--muted);line-height:1.5}
+.stockeasy-footer-credit{
+  display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;
+  color:var(--muted);text-decoration:none;font-size:12px;font-weight:650;
+  white-space:nowrap;border-radius:9px;padding:8px;flex:none;
+  transition:color .2s,background .2s;
+}
+.stockeasy-footer-credit strong{color:var(--accent);font-weight:800}
+.stockeasy-footer-credit svg{margin-left:8px;color:var(--accent);transition:transform .2s}
+.stockeasy-footer-credit:hover{background:var(--soft);color:var(--fg)}
+.stockeasy-footer-credit:hover strong{text-decoration:underline;text-underline-offset:3px}
+.stockeasy-footer-credit:hover svg{transform:translate(2px,-2px)}
+.stockeasy-footer-credit:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+[data-theme="dark"] .stockeasy-footer{
+  --footer-wave-back:rgba(75,165,115,.16);
+  --footer-wave-front:rgba(75,165,115,.11)
+}
+@media(max-width:1100px){
+  .stockeasy-footer-description{max-width:190px}
+  .stockeasy-footer-inner{gap:12px}
+}
+@media(max-width:850px){
+  .main{min-height:100dvh;padding-bottom:0}
+  .stockeasy-footer{margin:45px -16px 0}
+  .stockeasy-footer-inner{min-height:120px;flex-wrap:wrap;align-items:flex-start;gap:12px;
+    padding:20px 16px calc(90px + env(safe-area-inset-bottom,0px))}
+  .stockeasy-footer-brand{gap:9px}
+  .stockeasy-footer-credit{padding:4px 0;justify-content:flex-start}
+  .stockeasy-footer-waves{height:88px}
+}
+@media(max-width:560px){
+  .stockeasy-footer-inner{flex-direction:column;gap:12px}
+  .stockeasy-footer-brand strong{font-size:17px}
+  .stockeasy-footer-divider{height:19px;margin:0 2px}
+  .stockeasy-footer-description{font-size:11px;max-width:none}
+  .stockeasy-footer-credit{font-size:11px}
+}
+
 @media print{
   body{background:white;color:black}
   .app{display:block!important}

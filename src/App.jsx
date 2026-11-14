@@ -4,7 +4,7 @@ import {
   Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
-  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3
+  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3, ExternalLink
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -183,7 +183,26 @@ export default function App() {
         {page === "reports" && <Reports {...ctx} />}
         {page === "staff" && <Staff {...ctx} staff={staff} />}
       </div>
-      <footer className="main-footer">Developed by <a href="https://it.supuncompanies.com/" target="_blank" rel="noopener noreferrer">Supun IT Solutions</a></footer>
+      <footer className="stockeasy-footer" aria-label="StockEasy footer">
+        <svg className="stockeasy-footer-waves" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 110 C160 101 300 114 470 100 S730 31 905 52 S1150 115 1440 94 L1440 120 L0 120Z" fill="var(--footer-wave-back)"/>
+          <path d="M0 112 C225 106 340 122 550 108 S775 65 960 78 S1230 114 1440 103 L1440 120 L0 120Z" fill="var(--footer-wave-front)"/>
+        </svg>
+        <div className="stockeasy-footer-inner">
+          <div className="stockeasy-footer-brand">
+            <span className="stockeasy-footer-mark" aria-hidden="true"><Package size={23} strokeWidth={2.2}/></span>
+            <strong>StockEasy</strong>
+            <span className="stockeasy-footer-divider" aria-hidden="true"/>
+            <span className="stockeasy-footer-description">Inventory &amp; Stock Management System</span>
+          </div>
+          <a className="stockeasy-footer-credit" href="https://it.supuncompanies.com/" target="_blank" rel="noopener noreferrer"
+            aria-label="Supun IT Solutions website (opens in new tab)">
+            <span>Developed by</span>
+            <strong>Supun IT Solutions</strong>
+            <ExternalLink size={17} aria-hidden="true"/>
+          </a>
+        </div>
+      </footer>
     </main>
     {modal && <Dialog modal={modal} ctx={ctx} staff={staff} close={() => setModal(null)}/>}
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}</div>}
