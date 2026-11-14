@@ -58,7 +58,8 @@ const cookieName = "stockeasy_session";
 const tokenHash = s => crypto.createHash("sha256").update(s).digest("hex");
 const getCookie = req => (req.headers.cookie || "").split(";").map(s => s.trim()).find(s => s.startsWith(cookieName + "="))?.slice(cookieName.length + 1);
 const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.COOKIE_SECURE === "1" ? "; Secure" : ""}`;
-const sessionsMs = 7 * 24 * 60 * 60 * 1000;
+const sessionMs = 7 * 24 * 60 * 60 * 1000;
+const rememberedSessionMs = 30 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
 const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","deliveries","stock_history","reports","staff"];
 const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : role === "viewer" ? "view" : feature === "staff" ? "none" : "edit"]));
@@ -83,11 +84,13 @@ app.post("/api/login", (req, res) => {
       fail("Incorrect username or password.", 401);
     }
     attempts.delete(ip);
+    const remember = req.body?.remember === true;
+    const maxAge = remember ? rememberedSessionMs : sessionMs;
     const token = crypto.randomBytes(32).toString("hex");
     db.prepare("INSERT INTO sessions(token_hash,staff_id,expires_at) VALUES(?,?,?)")
-      .run(tokenHash(token), user.id, Date.now() + sessionsMs);
+      .run(tokenHash(token), user.id, Date.now() + maxAge);
     res.cookie(cookieName, token, {
-      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge: sessionsMs
+      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge
     });
     res.json({ user: publicUser(user) });
   } catch (e) {

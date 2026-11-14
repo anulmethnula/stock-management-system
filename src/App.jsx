@@ -4,7 +4,8 @@ import {
   Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
-  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3, ExternalLink
+  LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3, ExternalLink,
+  MapPin, Phone, UserRound, ChevronLeft, ChevronRight
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -47,15 +48,15 @@ function State({ value }) {
     ["Part received", "Part dispatched"].includes(value) ? "warn" : "neutral";
   return <Pill kind={kind}>{value}</Pill>;
 }
-function Modal({ title, sub, children, close, wide = false }) {
+function Modal({ title, sub, children, close, wide = false, className = "", HeaderIcon = null }) {
   useEffect(() => {
     const onKey = e => { if (e.key === "Escape") close(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [close]);
   return <div className="over" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
-    <section className={"modal " + (wide ? "modal-wide" : "")} role="dialog" aria-modal="true" aria-label={title}>
-      <div className="modal-head"><div><h3>{title}</h3>{sub && <p className="mute">{sub}</p>}</div>
+    <section className={"modal " + (wide ? "modal-wide " : "")+className} role="dialog" aria-modal="true" aria-label={title}>
+      <div className="modal-head">{HeaderIcon&&<span className="modal-title-icon"><HeaderIcon size={25}/></span>}<div><h3>{title}</h3>{sub && <p className="mute">{sub}</p>}</div>
         <button className="icon-btn" title="Close" aria-label="Close" onClick={close}><X size={20} /></button></div>
       {children}
     </section>
@@ -129,9 +130,9 @@ export default function App() {
     setModal({ type: "confirm", title, text, execute: () => action(path, method, undefined, "Updated successfully.", go) });
   const reason = (title, sub, path, go) =>
     setModal({ type: "reason", title, sub, execute: r => action(path, "POST", { reason: r }, "Reversal saved in stock history.", go) });
-  const signIn = async (username, password) => {
+  const signIn = async (username, password, remember = false) => {
     setBusy(true); setError("");
-    try { await request("/login", "POST", { username, password }); await refresh(); setPage("home"); return true; }
+    try { await request("/login", "POST", { username, password, remember }); await refresh(); setPage("home"); return true; }
     catch (e) { setError(e.message); return false; }
     finally { setBusy(false); }
   };
@@ -163,12 +164,17 @@ export default function App() {
       </div>
     </aside>
     <main className="main">
-      <div className="top-strip"><span><span className="live-dot"/> StockEasy Workspace</span>
+      <header className="workspace-header">
+        <svg className="workspace-waves" viewBox="0 0 1200 150" preserveAspectRatio="none" aria-hidden="true"><path d="M0 108 C190 72 330 132 515 100 S760 18 930 61 S1080 116 1200 62 L1200 150 L0 150Z"/><path d="M0 128 C210 94 370 148 565 119 S790 53 958 86 S1090 128 1200 101 L1200 150 L0 150Z"/></svg>
+        <div className="workspace-brand"><span className="workspace-box" aria-hidden="true"><Package size={24}/></span><strong>StockEasy <b>Workspace</b></strong><i/><span>Inventory &amp; Stock Management System</span></div>
+        <div className="workspace-illustration" aria-hidden="true"><svg viewBox="0 0 190 90"><g className="mini-boxes"><path d="M11 49h48v34H11z"/><path d="M34 17h46v34H34z"/><path d="M58 48h43v35H58z"/><path className="tape" d="M29 49h12v10H29zM52 17h11v11H52zM72 48h11v10H72z"/></g><g className="clipboard" transform="translate(112 8) rotate(8 31 38)"><rect x="4" y="5" width="59" height="75" rx="8"/><rect x="11" y="14" width="45" height="59" rx="4"/><path d="M23 27l4 4 8-9M23 42l4 4 8-9M23 57l4 4 8-9M39 28h11M39 43h11M39 58h11"/><rect x="23" y="0" width="22" height="12" rx="5"/></g></svg></div>
         <div className="top-actions">
           <button className="icon-btn mobile-action" aria-label="Log out" title="Log out" onClick={signOut}><LogOut size={19}/></button>
           <button className="btn ghost sm" onClick={() => refresh().then(() => setToast("All records refreshed.")).catch(e => setError(e.message))}>
             <RefreshCw size={14}/><span>Refresh</span></button>
-        </div></div>
+        </div>
+      </header>
+      <nav className="page-breadcrumb" aria-label="Breadcrumb"><button onClick={()=>setPage("home")}><LayoutDashboard size={14}/> Home</button>{page!=="home"&&<><ArrowRight size={13}/><strong>{MENU.find(([key])=>key===page)?.[1]||"Page"}</strong></>}</nav>
       {error && <div className="error-banner" role="alert"><AlertTriangle size={19}/><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={18}/></button></div>}
       <div className="page" key={page}>
         {page === "home" && <Home {...ctx} setPage={setPage} />}
@@ -189,12 +195,6 @@ export default function App() {
           <path d="M0 112 C225 106 340 122 550 108 S775 65 960 78 S1230 114 1440 103 L1440 120 L0 120Z" fill="var(--footer-wave-front)"/>
         </svg>
         <div className="stockeasy-footer-inner">
-          <div className="stockeasy-footer-brand">
-            <span className="stockeasy-footer-mark" aria-hidden="true"><Package size={23} strokeWidth={2.2}/></span>
-            <strong>StockEasy</strong>
-            <span className="stockeasy-footer-divider" aria-hidden="true"/>
-            <span className="stockeasy-footer-description">Inventory &amp; Stock Management System</span>
-          </div>
           <a className="stockeasy-footer-credit" href="https://it.supuncompanies.com/" target="_blank" rel="noopener noreferrer"
             aria-label="Supun IT Solutions website (opens in new tab)">
             <span>Developed by</span>
@@ -210,65 +210,48 @@ export default function App() {
 }
 
 function Login({ signIn, busy, error }) {
-  const [username, setUsername] = useState("admin"), [password, setPassword] = useState("");
+  const [username, setUsername] = useState("admin"), [password, setPassword] = useState(""), [remember,setRemember]=useState(false);
   return <div className="login-wrap">
     <div className="login-intro"><div className="login-brand"><img className="brand-full-logo" src="/logo.png" alt="Supun Group of Companies"/></div>
+      <span className="login-accent" aria-hidden="true"/>
       <h1>All your stock.<br/><span>One simple place.</span></h1>
       <p>From suppliers to customer companies — keep every item accounted for.</p>
       <div className="login-path"><span><Building2/> Suppliers</span><ArrowRight/><span><PackageCheck/> Receive</span><ArrowRight/><span><Truck/> Deliver</span></div>
     </div>
-    <form className="login-card" onSubmit={e => { e.preventDefault(); signIn(username,password); }}>
-      <div className="login-icon"><LockKeyhole size={26}/></div><h2>Welcome back</h2><p className="mute">Sign in to manage your stock.</p>
-      <label>Username</label><input autoFocus autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required/>
-      <label>Password</label><input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required/>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <button type="submit" className="btn login-submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}<ArrowRight size={18}/></button>
-      <p className="login-hint">First time? Your admin password is printed in the server window.</p>
-    </form>
+    <div className="login-panel"><div className="login-product-brand"><span><Package size={28}/></span><strong>Stock<span>Easy</span></strong><small>Inventory &amp; Stock Management System</small></div>
+      <form className="login-card" onSubmit={e => { e.preventDefault(); signIn(username,password,remember); }}>
+        <div className="login-icon"><LockKeyhole size={26}/></div><h2>Welcome back</h2><p className="mute">Sign in to manage your stock.</p>
+        <label>Username</label><div className="login-field"><Users size={18}/><input autoFocus autoComplete="username" placeholder="Enter your username" value={username} onChange={e => setUsername(e.target.value)} required/></div>
+        <label>Password</label><div className="login-field"><LockKeyhole size={18}/><input type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} required/></div>
+        <label className="login-remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/><span><strong>Remember me</strong><small>Keep me signed in securely for 30 days</small></span></label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button type="submit" className="btn login-submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}<ArrowRight size={18}/></button>
+      </form>
+    </div>
   </div>;
 }
 
-function Home({ d, setPage, setModal, canEdit, branch }) {
+function Home({ d, setPage, setModal, canEdit, branch,user }) {
+  const [range,setRange]=useState("7d"),[hover,setHover]=useState(null);
   const low = active(d.products).filter(p => stockLevel(p) !== "ok");
   const pending = d.pos.filter(p => ["Ordered","Part received"].includes(p.status));
   const openCustomers = d.orders.filter(o => ["Open","Part dispatched"].includes(o.status));
-  const value = d.products.reduce((a,p) => a + p.stock * p.cost,0);
   const stats = [
-    [Package,"Items",active(d.products).length,"Products in your list"],
-    [AlertTriangle,"Need attention",low.length,"Low or out of stock"],
-    [ClipboardList,"Branch requests",pending.length,"Waiting for goods"],
-    [ShoppingBag,"Customer orders",openCustomers.length,"Waiting to send"]
+    [Package,"Items",active(d.products).length,"Active products","green"],[AlertTriangle,"Low stock",low.length,"Need attention","amber"],
+    [ClipboardList,"Pending POs",pending.length,"Waiting to receive","blue"],[ShoppingBag,"Customer orders",openCustomers.length,"Waiting to send","purple"]
   ];
-  return <>
-    <div className="home-heading"><div><div className="eyebrow">YOUR STOCK AT A GLANCE</div><h1>Good day! 👋</h1><p className="sub">Here's what's happening between your branches and customers.</p></div>
-      {canEdit && <button className="btn" onClick={() => setModal({ type: "po" })}><Plus size={18}/> Request stock</button>}</div>
-    <div className="grid stats-grid">{stats.map(([Icon,label,n,sub],i) => <div className="card stat-card pop" style={{"--i":i}} key={label}>
-      <span className="stat-icon"><Icon size={20}/></span><span className="stat-num">{n}</span><strong>{label}</strong><small>{sub}</small>
-    </div>)}</div>
-    <div className="dashboard-cols"><div className="card workflow"><h2>How stock moves</h2><p className="mute">Three simple steps for daily work.</p>
-      <div className="workflow-steps">{[
-        [Building2,"1. Request from a branch","Create a Purchase Order (PO)","pos"],
-        [PackageCheck,"2. Receive the delivery","Save a GRN — stock increases","grns"],
-        [Truck,"3. Send to a company","Create a delivery — stock decreases","orders"]
-      ].map(([Icon,title,sub,to])=><button className="workflow-step" key={to} onClick={() => setPage(to)}>
-        <span><Icon size={22}/></span><span><strong>{title}</strong><small>{sub}</small></span><ArrowRight size={17}/></button>)}</div></div>
-      <div className="card stock-summary"><div className="small-heading"><span><h2>Stock value</h2><p className="mute">Based on buying price</p></span><Boxes size={24}/></div>
-        <div className="stock-value">{rs(value)}</div><div className="divider-line"/>
-        <h3>Needs reordering</h3>
-        {low.length ? low.slice(0,4).map(p=><div className="stock-warning" key={p.id}><Picture p={p}/>
-          <div><strong>{p.name}</strong><small>{p.stock} {p.unit} available</small></div><Pill kind={p.stock===0?"off":"warn"}>{p.stock===0?"Out":"Low"}</Pill></div>)
-          : <p className="mute">All active items have enough stock. ✅</p>}
-        {low.length>4 && <button className="text-button" onClick={() => setPage("products")}>See all items <ArrowRight size={14}/></button>}
-      </div></div>
-    {pending.length>0 && <><h2 className="list-heading">Waiting for supplier deliveries</h2><div className="list">
-      {pending.slice(0,4).map(po=><div className="card compact-row" key={po.n}><span className="row-icon"><ClipboardList/></span>
-        <div className="grow"><strong>{po.id}</strong><div className="mute">{branch(po.sid).name} · {today(po.date)}</div></div>
-        <State value={po.status}/>{canEdit && <button className="btn sm" onClick={() => setModal({ type: "grn", po })}>Receive goods</button>}</div>)}
-    </div></>}
-  </>;
+  const chart=useMemo(()=>{
+    const now=new Date(),b=[];if(range==="12m")for(let i=11;i>=0;i--){const x=new Date(now.getFullYear(),now.getMonth()-i,1);b.push({key:`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`,label:x.toLocaleDateString("en-LK",{month:"short"}),full:x.toLocaleDateString("en-LK",{month:"long",year:"numeric"}),received:0,delivered:0});}else{const n=range==="30d"?30:7;for(let i=n-1;i>=0;i--){const x=new Date(now);x.setDate(now.getDate()-i);b.push({key:[x.getFullYear(),String(x.getMonth()+1).padStart(2,"0"),String(x.getDate()).padStart(2,"0")].join("-"),label:x.toLocaleDateString("en-LK",n===7?{weekday:"short"}:{day:"numeric",month:"short"}),full:x.toLocaleDateString("en-LK",{day:"numeric",month:"short",year:"numeric"}),received:0,delivered:0});}}
+    const map=new Map(b.map(x=>[x.key,x]));d.movements.forEach(m=>{const x=map.get(String(m.at).slice(0,range==="12m"?7:10));if(!x)return;if(m.type==="Goods received"&&m.qty>0)x.received+=m.qty;if(m.type==="Delivered to customer"&&m.qty<0)x.delivered+=Math.abs(m.qty);});const max=Math.max(1,...b.flatMap(x=>[x.received,x.delivered])),pts=k=>b.map((x,i)=>({x:20+i*660/(b.length-1),y:188-x[k]/max*140,value:x[k],label:x.full})),smooth=p=>p.reduce((s,x,i)=>i?s+` C ${(p[i-1].x+x.x)/2} ${p[i-1].y}, ${(p[i-1].x+x.x)/2} ${x.y}, ${x.x} ${x.y}`:`M ${x.x} ${x.y}`,"");const r=pts("received"),v=pts("delivered"),fill=p=>smooth(p)+` L ${p.at(-1).x} 202 L ${p[0].x} 202 Z`;return{b,r,v,rp:smooth(r),vp:smooth(v),rf:fill(r),vf:fill(v)};
+  },[d.movements,range]);
+  return <div className="home-dashboard"><section className="home-hero"><div className="home-hero-copy"><div className="eyebrow">STOCKEASY ERP</div><h1>Complete Stock Management<br/>for <span>Your Business</span></h1><p>Manage inventory, suppliers, orders, and deliveries — all in one powerful, easy-to-use system.</p><div className="home-hero-actions"><button className="btn" disabled={!canEdit} onClick={()=>setModal({type:"po"})}><Plus size={17}/> Request Stock</button><button className="btn ghost" disabled={accessLevel(user,"reports")==="none"} onClick={()=>setPage("reports")}><BarChart3 size={17}/> View Reports</button></div><div className="home-benefits"><span><Boxes size={18}/> Track stock</span><span><Shield size={18}/> Reduce shortages</span><span><BarChart3 size={18}/> Improve control</span></div></div><div className="home-hero-visual" aria-hidden="true"><div className="hero-glow"/><div className="hero-laptop"><div className="hero-screen"><b>StockEasy</b><span/><span/><span/></div><i/></div><div className="hero-box box-one"/><div className="hero-box box-two"/><div className="hero-float one"><Package size={19}/><span><small>Inventory</small><strong>{active(d.products).length} items</strong></span></div><div className="hero-float two"><Truck size={19}/><span><small>Pending POs</small><strong>{pending.length} requests</strong></span></div></div></section>
+    <h2 className="dashboard-title">Your Stock at a Glance</h2><div className="home-kpis">{stats.map(([Icon,label,n,sub,tone])=><div className={`home-kpi ${tone}`} key={label}><span><Icon size={21}/></span><div><strong>{n}</strong><b>{label}</b><small>{sub}</small></div></div>)}</div>
+    <div className="home-dashboard-grid"><section className="home-chart-card"><div className="home-card-head"><div><h2>Stock Movement</h2><p>Items received vs. delivered</p></div><div className="chart-ranges">{[["7d","7 days"],["30d","30 days"],["12m","12 months"]].map(([k,l])=><button key={k} className={range===k?"on":""} onClick={()=>{setRange(k);setHover(null)}}>{l}</button>)}</div></div><div className="chart-legend"><span><i className="received"/>Received</span><span><i className="delivered"/>Delivered</span></div><div className="movement-chart" key={range}>{hover&&<div className="chart-tooltip" style={{left:`${hover.x/7}%`,top:`${hover.y/2.2}%`}}><strong>{hover.label}</strong><span>{hover.series}: {hover.value}</span></div>}<svg viewBox="0 0 700 225"><path className="chart-fill received" d={chart.rf}/><path className="chart-fill delivered" d={chart.vf}/><path pathLength="1" className="chart-line received" d={chart.rp}/><path pathLength="1" className="chart-line delivered" d={chart.vp}/>{[[chart.r,"Received","received"],[chart.v,"Delivered","delivered"]].map(([p,l,c])=>p.map((x,i)=><circle key={l+i} className={`chart-dot ${c}`} cx={x.x} cy={x.y} r="4" tabIndex="0" onMouseEnter={()=>setHover({...x,series:l})} onMouseLeave={()=>setHover(null)} onFocus={()=>setHover({...x,series:l})} onBlur={()=>setHover(null)}/>))}{chart.b.map((x,i)=>(range!=="30d"||i%5===0||i===chart.b.length-1)&&<text key={x.key} x={chart.r[i].x} y="220" textAnchor="middle">{x.label}</text>)}</svg></div></section>
+      <section className="recent-po-card"><div className="home-card-head"><div><h2>Recent Stock Requests</h2><p>Latest supplier requests</p></div><button className="text-button" onClick={()=>setPage("pos")}>View all <ArrowRight size={14}/></button></div><div className="recent-po-list">{d.pos.slice(0,5).map(po=><div className="recent-po" key={po.n}><span className="row-icon"><ClipboardList size={17}/></span><div><strong>{po.id}</strong><small>{branch(po.sid).name} · {po.items.reduce((n,l)=>n+l.qty,0)} units</small></div><State value={po.status}/><div className="recent-po-actions"><button className="icon-btn" title="View request" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={15}/></button>{canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn primary-icon" title="Receive goods" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={15}/></button>}</div></div>)}{!d.pos.length&&<p className="mute">No stock requests yet.</p>}</div></section></div>
+  </div>;
 }
 
-function Directory({ d, type, setModal, confirm, canEdit }) {
+function LegacyDirectory({ d, type, setModal, confirm, canEdit }) {
   const isBranch = type === "branches", list = d[type];
   const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false), [recordFilter,setRecordFilter]=useState("all");
   const typeOf=x=>isBranch?x.supplier_type:x.customer_type;
@@ -295,6 +278,40 @@ function Directory({ d, type, setModal, confirm, canEdit }) {
             "This will hide the record from new forms. Old orders and history will be kept.",
             "/"+type+"/"+x.id)}><Trash2 size={17}/></button>}</div>}
       </div>)}</div>}
+  </>;
+}
+
+function Directory({ d, type, setModal, confirm, canEdit }) {
+  const isBranch=type==="branches",list=d[type];
+  const [q,setQ]=useState(""),[recordFilter,setRecordFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("active"),[page,setPage]=useState(1);
+  const typeOf=x=>isBranch?x.supplier_type:x.customer_type;
+  const filtered=list.filter(x=>(statusFilter==="all"||(statusFilter==="active"?x.active:!x.active))&&(!isBranch||recordFilter==="all"||typeOf(x)===recordFilter)&&[x.name,x.contact,x.phone,x.phone2,x.location,x.address,x.notes].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const pageCount=Math.max(1,Math.ceil(filtered.length/9)),visible=filtered.slice((page-1)*9,page*9);
+  useEffect(()=>setPage(1),[q,recordFilter,statusFilter]);
+  useEffect(()=>{if(page>pageCount)setPage(pageCount)},[page,pageCount]);
+  const activeCount=list.filter(x=>x.active).length,internalCount=list.filter(x=>x.active&&typeOf(x)==="internal").length,externalCount=list.filter(x=>x.active&&typeOf(x)!=="internal").length;
+  const summaries=isBranch?[[Building2,"Total",list.length,"green","all"],[Users,"Internal",internalCount,"blue","internal"],[Truck,"External",externalCount,"amber","external"],[Check,"Active",activeCount,"green","active"]]:[[Users,"Total customers",list.length,"green","all"],[Check,"Active",activeCount,"blue","active"],[Archive,"Inactive",list.length-activeCount,"amber","inactive"]];
+  const selectSummary=key=>{if(isBranch){if(key==="all"){setStatusFilter("all");setRecordFilter("all")}else if(key==="active"){setStatusFilter("active");setRecordFilter("all")}else{setStatusFilter("active");setRecordFilter(key)}}else setStatusFilter(key)};
+  const summaryOn=key=>isBranch?(key==="all"?statusFilter==="all"&&recordFilter==="all":key==="active"?statusFilter==="active"&&recordFilter==="all":statusFilter==="active"&&recordFilter===key):statusFilter===key;
+  return <>
+    <SectionHeading title={isBranch?"Suppliers":"Customer companies"} sub={isBranch?"Manage internal Supun locations and external supply partners.":"Companies that receive goods from you."} action={canEdit?()=>setModal({type:isBranch?"branch":"customer"}):null} label={isBranch?"Add supplier":"Add company"}/>
+    <div className={`directory-summary ${isBranch?"supplier-summary":"customer-summary"}`}>{summaries.map(([Icon,label,value,tone,key])=><button type="button" className={`directory-summary-card ${tone} ${summaryOn(key)?"on":""}`} key={label} onClick={()=>selectSummary(key)} aria-pressed={summaryOn(key)}><span><Icon size={20}/></span><div><small>{label}</small><strong>{value}</strong></div></button>)}</div>
+    <div className={`directory-tools ${isBranch?"supplier-tools":"customer-tools"}`}><SearchBox value={q} change={setQ} placeholder={isBranch?"Search supplier, contact or location...":"Search company, contact or address..."}/>
+      {!isBranch&&<select className="filter-select" aria-label="Filter status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="active">Active</option><option value="inactive">Removed / inactive</option><option value="all">All statuses</option></select>}</div>
+    {!isBranch&&<div className="result-count"><strong>{filtered.length}</strong> matching customers</div>}
+    {!filtered.length?<Empty Icon={isBranch?Building2:Users} title="Nothing found" sub="Add a new record or try another search."/>:<div className="grid directory-grid">{visible.map(x=><div className={`card directory-card pop supplier-card ${isBranch?"supplier-"+(x.supplier_type||"external"):"customer-record"} ${canEdit?"clickable-card":""}`} key={x.id}
+      role={canEdit?"button":undefined} tabIndex={canEdit?0:undefined} title={canEdit?`Edit ${x.name}`:undefined}
+      onClick={e=>{if(canEdit&&!e.target.closest("button,a"))setModal({type:isBranch?"branch":"customer",record:x})}}
+      onKeyDown={e=>{if(canEdit&&(e.key==="Enter"||e.key===" ")){e.preventDefault();setModal({type:isBranch?"branch":"customer",record:x})}}}>
+      <div className="record-head"><span className="record-avatar">{isBranch&&x.supplier_type==="internal"?<Building2 size={23}/>:isBranch?<Truck size={23}/>:<Users size={23}/>}</span><div className="record-states">{isBranch&&<Pill kind={x.supplier_type==="internal"?"neutral":"warn"}>{x.supplier_type==="internal"?"Internal":"External"}</Pill>}<Pill kind={x.active?"good":"off"}>{x.active?"Active":"Removed"}</Pill></div></div>
+      <h3>{x.name}</h3>
+      <div className="directory-details">{(x.location||x.address)&&<span><MapPin size={15}/>{x.location||x.address}</span>}{x.contact&&<span><UserRound size={15}/>{x.contact}</span>}{x.phone&&<span><Phone size={15}/>{x.phone}</span>}{x.phone2&&<span><Phone size={15}/>{x.phone2}</span>}{!(x.location||x.address||x.contact||x.phone||x.phone2)&&<span className="mute">No contact details added</span>}</div>
+      {x.notes&&<p className="record-note">{x.notes}</p>}
+      <div className="card-actions">{canEdit&&<button className="btn ghost sm" title={x.active?"Edit record":"Edit or restore record"} onClick={()=>setModal({type:isBranch?"branch":"customer",record:x})}><Pencil size={15}/> {x.active?"Edit":"Edit / Restore"}</button>}
+        {(x.location||x.address)&&<a className="btn ghost sm" title={isBranch?"View location":"View address"} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(x.location||x.address)}`} target="_blank" rel="noopener noreferrer"><MapPin size={15}/> {isBranch?"Location":"Address"}</a>}
+        {canEdit&&x.active===1&&<button className="icon-btn danger" title="Remove" onClick={()=>confirm("Remove "+x.name+"?","This will hide the record from new forms. Old orders and history will be kept.","/"+type+"/"+x.id)}><Trash2 size={17}/></button>}</div>
+    </div>)}</div>}
+    {!!filtered.length&&<div className="directory-pagination"><span>Showing {(page-1)*9+1}-{Math.min(page*9,filtered.length)} of {filtered.length}</span><div><button className="icon-btn" title="Previous page" disabled={page===1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{page}</strong><span>of {pageCount}</span><button className="icon-btn" title="Next page" disabled={page===pageCount} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>}
   </>;
 }
 
@@ -378,29 +395,34 @@ function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
 }
 
 function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
-  const [q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open");
+  const [q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open"),[dateFilter,setDateFilter]=useState("all"),[page,setPage]=useState(1);
   const customers=[...new Set(d.orders.map(o=>o.cid))].map(id=>customer(id));
-  const list=d.orders.filter(o=>(customerFilter==="all"||Number(customerFilter)===o.cid)&&(statusFilter==="all"||(statusFilter==="open"?["Open","Part dispatched"].includes(o.status):o.status===statusFilter))&&[o.id,customer(o.cid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
-  return <>
+  const dateMatches=date=>{if(dateFilter==="all")return true;const now=new Date(),value=new Date(String(date).slice(0,10)+"T00:00:00"),days=Math.floor((new Date(now.getFullYear(),now.getMonth(),now.getDate())-value)/86400000);return dateFilter==="today"?days===0:dateFilter==="7"?days>=0&&days<7:dateFilter==="30"?days>=0&&days<30:value.getFullYear()===now.getFullYear()&&value.getMonth()===now.getMonth();};
+  const list=d.orders.filter(o=>(customerFilter==="all"||Number(customerFilter)===o.cid)&&(statusFilter==="all"||(statusFilter==="open"?["Open","Part dispatched"].includes(o.status):o.status===statusFilter))&&dateMatches(o.date)&&[o.id,customer(o.cid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const pageSize=10,totalPages=Math.max(1,Math.ceil(list.length/pageSize)),currentPage=Math.min(page,totalPages),visible=list.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  useEffect(()=>setPage(1),[q,customerFilter,statusFilter,dateFilter]);
+  return <div className="customer-orders-page">
     <SectionHeading title="Customer orders" sub="Record goods requested by customer companies before sending them."
       action={canEdit?()=>setModal({type:"order"}):null} label="New customer order"/>
-    <div className="list-tools po-request-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
+    <div className="customer-order-summary"><button type="button" className={"green "+(statusFilter==="all"?"on":"")} onClick={()=>setStatusFilter("all")}><span><ShoppingBag size={19}/></span><small>Total orders</small><strong>{d.orders.length}</strong></button><button type="button" className={"blue "+(statusFilter==="Open"?"on":"")} onClick={()=>setStatusFilter("Open")}><span><Truck size={19}/></span><small>Waiting to send</small><strong>{d.orders.filter(o=>o.status==="Open").length}</strong></button><button type="button" className={"amber "+(statusFilter==="Part dispatched"?"on":"")} onClick={()=>setStatusFilter("Part dispatched")}><span><Package size={19}/></span><small>Part dispatched</small><strong>{d.orders.filter(o=>o.status==="Part dispatched").length}</strong></button><button type="button" className={"green "+(statusFilter==="Dispatched"?"on":"")} onClick={()=>setStatusFilter("Dispatched")}><span><Check size={19}/></span><small>Completed</small><strong>{d.orders.filter(o=>o.status==="Dispatched").length}</strong></button></div>
+    <div className="list-tools customer-order-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-      <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to send</option><option value="Open">Open</option><option value="Part dispatched">Part dispatched</option><option value="Dispatched">Dispatched</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
+      <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to send</option><option value="Open">Open</option><option value="Part dispatched">Part dispatched</option><option value="Dispatched">Dispatched</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select>
+      <select className="filter-select" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} aria-label="Filter by date"><option value="all">All dates</option><option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="month">This month</option></select></div>
     <div className="result-count"><strong>{list.length}</strong> of {d.orders.length} customer orders shown</div>
     {!list.length?<Empty Icon={ShoppingBag} title="No matching customer orders" sub="Change the filters or create a new order."/>:
-      <div className="po-request-table"><div className="po-request-head po-request-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch Progress</span><span>Status</span><span>Actions</span></div>
-        {list.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-request-row" key={o.n}>
+      <><div className="po-request-table customer-order-table"><div className="po-request-head po-request-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch Progress</span><span>Status</span><span>Actions</span></div>
+        {visible.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-request-row customer-order-row" key={o.n}>
           <div className="po-ref po-request-ref"><strong>{o.id}</strong><small>{today(o.date)}</small></div>
           <div className="po-supplier po-request-supplier"><span className="row-icon"><ShoppingBag size={17}/></span><strong>{customer(o.cid).name}</strong></div>
           <div className="po-item-summary po-request-items"><strong>{o.items.length} item{o.items.length===1?"":"s"} · {qty} unit{qty===1?"":"s"}</strong><small>{o.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{o.items.length>2?` +${o.items.length-2} more`:""}</small></div>
           <div className="po-request-progress"><div><strong>{shipped} dispatched</strong><b>{percent}%</b></div><div className="bar"><i style={{width:percent+"%"}}/></div><small>{qty-shipped} remaining of {qty}</small></div>
           <div className="po-request-status"><State value={o.status}/></div><div className="po-request-actions"><button className="icon-btn" aria-label="View order details" title="View order details" onClick={()=>setModal({type:"view-order",record:o})}><Eye size={16}/></button>
-            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn primary-icon" title="Send goods" onClick={()=>setModal({type:"dispatch",order:o})}><Truck size={17}/></button>}
-            {canEdit&&o.status==="Open"&&<button className="icon-btn" title="Edit order" onClick={()=>setModal({type:"order",record:o})}><Pencil size={16}/></button>}
-            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn danger" title="Cancel remaining order" onClick={()=>confirm("Cancel customer order?","Any goods already sent will stay in delivery history.","/customer-orders/"+o.n)}><X size={17}/></button>}</div>
-        </div>})}</div>}
-  </>;
+            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn primary-icon" aria-label="Dispatch order" title="Dispatch order" onClick={()=>setModal({type:"dispatch",order:o})}><Truck size={16}/></button>}
+            {canEdit&&o.status==="Open"&&<button className="icon-btn" aria-label="Edit order" title="Edit order" onClick={()=>setModal({type:"order",record:o})}><Pencil size={16}/></button>}
+            {canEdit&&["Open","Part dispatched"].includes(o.status)&&<button className="icon-btn danger" aria-label="Cancel remaining order" title="Cancel remaining order" onClick={()=>confirm("Cancel customer order?","Any goods already sent will stay in delivery history.","/customer-orders/"+o.n)}><X size={16}/></button>}</div>
+        </div>})}</div>{totalPages>1&&<div className="customer-order-pagination"><span>Showing {(currentPage-1)*pageSize+1}–{Math.min(currentPage*pageSize,list.length)} of {list.length} orders</span><div><button className="btn ghost sm" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}>Previous</button><strong>{currentPage}</strong><button className="btn ghost sm" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}>Next</button></div></div>}</>}
+  </div>;
 }
 
 function Deliveries({d,customer,product,setModal,canEdit,reason}) {
@@ -512,18 +534,26 @@ function Reports({d,branch,customer,product}) {
   </div>;
 }
 
-function Staff({ staff,user,setModal,confirm }) {
+function Staff({ staff,user,setModal,confirm,action }) {
+  const [q,setQ]=useState(""),[roleFilter,setRoleFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("all"),[page,setPage]=useState(1);
+  const accessName=s=>s.role==="admin"?"Administrator · Full access":s.role==="viewer"?"Viewer · View only":"Staff · Custom access";
+  const rows=staff.filter(s=>(roleFilter==="all"||s.role===roleFilter)&&(statusFilter==="all"||(statusFilter==="active"?s.active===1:s.active!==1))&&[s.username,s.role,accessName(s),...Object.entries(s.permissions||{}).flat()].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const pageSize=10,totalPages=Math.max(1,Math.ceil(rows.length/pageSize)),currentPage=Math.min(page,totalPages),visible=rows.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  useEffect(()=>setPage(1),[q,roleFilter,statusFilter]);
   return <>
     <SectionHeading title="User access management" sub="Create accounts and choose View, Edit, or No Access for every system module."
       action={()=>setModal({type:"staff"})} label="Add user account"/>
-    <div className="grid staff-grid">{staff.map(s=>{const levels=Object.values(s.permissions||{});return <div className="card directory-card staff-card" key={s.id}>
-      <div className="record-head"><span className="record-avatar"><Shield size={23}/></span><Pill kind={s.active?"good":"off"}>{s.active?"Active":"Disabled"}</Pill></div>
-      <h3>{s.username}</h3><p className="mute">{s.role==="admin"?"Administrator · Full system access":"Custom module access"}</p>
-      {s.role!=="admin"&&<div className="access-summary"><span><strong>{levels.filter(x=>x==="edit").length}</strong>Edit</span><span><strong>{levels.filter(x=>x==="view").length}</strong>View</span><span><strong>{levels.filter(x=>x==="none").length}</strong>Hidden</span></div>}
-      <div className="card-actions"><button className="btn ghost sm" onClick={()=>setModal({type:"staff",record:s})}><Pencil size={15}/> Edit access</button>
-        {s.id!==user.id&&s.active===1&&<button className="icon-btn danger" title="Disable account" onClick={()=>confirm("Disable "+s.username+"?",
-          "This person will no longer be able to sign in.","/staff/"+s.id,"DELETE","staff")}><Trash2 size={16}/></button>}</div>
-    </div>})}</div>
+    <div className="staff-summary"><div><small>Total users</small><strong>{staff.length}</strong></div><div><small>Active</small><strong>{staff.filter(s=>s.active===1).length}</strong></div><div><small>Disabled</small><strong>{staff.filter(s=>s.active!==1).length}</strong></div></div>
+    <div className="staff-tools"><SearchBox value={q} change={setQ} placeholder="Search username, role or access…"/><select value={roleFilter} onChange={e=>setRoleFilter(e.target.value)} aria-label="Filter by role or access"><option value="all">All roles / access</option><option value="admin">Administrators</option><option value="staff">Custom access</option><option value="viewer">View only</option></select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by account status"><option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option></select></div>
+    <div className="result-count"><strong>{rows.length}</strong> matching user{rows.length===1?"":"s"}</div>
+    {!rows.length?<Empty Icon={Shield} title="No matching users" sub="Change the search text or filters."/>:<><div className="staff-table"><div className="staff-row staff-head"><span>Username</span><span>Role / Access</span><span>Status</span><span>Actions</span></div>{visible.map(s=><div className="staff-row" key={s.id}>
+      <div className="staff-user"><span className="user-avatar">{s.username[0].toUpperCase()}</span><div><strong>{s.username}</strong>{s.id===user.id&&<small>Current account</small>}</div></div>
+      <div className="staff-role"><strong>{accessName(s)}</strong>{s.role!=="admin"&&<small>{Object.values(s.permissions||{}).filter(x=>x==="edit").length} edit · {Object.values(s.permissions||{}).filter(x=>x==="view").length} view</small>}</div>
+      <div className="staff-status"><Pill kind={s.active?"good":"off"}>{s.active?"Active":"Disabled"}</Pill></div>
+      <div className="staff-actions"><button className="icon-btn" title="View permissions" aria-label={"View permissions for "+s.username} onClick={()=>setModal({type:"staff-permissions",record:s})}><Eye size={16}/></button><button className="icon-btn" title="Edit access" aria-label={"Edit access for "+s.username} onClick={()=>setModal({type:"staff",record:s})}><Pencil size={16}/></button>
+        {s.id!==user.id&&s.active===1&&<button className="icon-btn danger" title="Disable account" aria-label={"Disable "+s.username} onClick={()=>confirm("Disable "+s.username+"?","This person will no longer be able to sign in.","/staff/"+s.id,"DELETE","staff")}><X size={16}/></button>}
+        {s.id!==user.id&&s.active!==1&&<button className="icon-btn primary-icon" title="Enable account" aria-label={"Enable "+s.username} onClick={()=>action("/staff/"+s.id,"PUT",{username:s.username,role:s.role,permissions:s.permissions,active:1},s.username+" enabled.","staff")}><Check size={16}/></button>}</div>
+    </div>)}</div>{totalPages>1&&<div className="staff-pagination"><button className="btn ghost sm" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page <strong>{currentPage}</strong> of {totalPages}</span><button className="btn ghost sm" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}</>}
   </>;
 }
 
@@ -543,6 +573,7 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="return") return <MovementForm title="Customer return" type="return" doc={modal.delivery} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="adjust") return <AdjustmentForm d={d} record={modal.record} busy={busy} close={close} action={action}/>;
   if(modal.type==="staff") return <StaffForm record={modal.record} close={close} busy={busy} action={action}/>;
+  if(modal.type==="staff-permissions") return <StaffPermissionsView record={modal.record} close={close}/>;
   if(["view-po","view-order","view-delivery","view-grn","view-return"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} openProduct={openProduct} close={close}/>;
   return null;
 }
@@ -562,8 +593,25 @@ function DirectoryForm({modal,close,busy,action}) {
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
   const route=isBranch?"branches":"customers";
   const typeKey=isBranch?"supplier_type":"customer_type",recordType=f[typeKey]||"external";
-  return <Modal title={(record?"Edit ":"Add ")+(isBranch?"supplier":"customer company")} sub="Fill in the details below." close={close}>
-    <form onSubmit={e=>{e.preventDefault();action("/"+route+(record?"/"+record.id:""),record?"PUT":"POST",f,(isBranch?"Supplier":"Company")+" saved.");}}>
+  const submit=e=>{e.preventDefault();action("/"+route+(record?"/"+record.id:""),record?"PUT":"POST",f,(isBranch?"Supplier":"Company")+" saved.");};
+  if(isBranch)return <Modal wide className="supplier-form-modal" HeaderIcon={Building2} title={(record?"Edit ":"Add ")+"supplier"} sub="Add the supplier and contact details used in stock requests." close={close}>
+    <form className="supplier-form" onSubmit={submit}>
+      <div className="supplier-form-type"><label>Supplier type *</label><div className="type-choice">
+        <button type="button" className={recordType==="internal"?"on":""} onClick={()=>set(typeKey,"internal")}><Building2 size={18}/><span><strong>Internal</strong><small>Supun Group branch</small></span></button>
+        <button type="button" className={recordType==="external"?"on":""} onClick={()=>set(typeKey,"external")}><Truck size={18}/><span><strong>External</strong><small>Outside supplier</small></span></button>
+      </div></div>
+      <div className="supplier-form-field full"><label>Supplier name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: Fresh Farm Foods"/></div>
+      <div className="supplier-form-field"><label>Contact person</label><input value={f.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="Contact name"/></div>
+      <div className="supplier-form-field"><label>Primary phone</label><input type="tel" value={f.phone||""} onChange={e=>set("phone",e.target.value)} placeholder="Contact number"/></div>
+      <div className="supplier-form-field"><label>Secondary phone</label><input type="tel" value={f.phone2||""} onChange={e=>set("phone2",e.target.value)} placeholder="Alternative number"/></div>
+      <div className="supplier-form-field"><label>Supplier location</label><input value={f.location||""} onChange={e=>set("location",e.target.value)} placeholder="Address or location"/></div>
+      <div className="supplier-form-field full"><label>Notes</label><textarea rows={2} value={f.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Opening hours, delivery instructions, or other notes"/></div>
+      {record&&<label className="supplier-active-toggle full"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/><span aria-hidden="true"/><div><strong>Active supplier</strong><small>Available in new stock requests</small></div></label>}
+      <div className="supplier-form-actions"><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!f.name.trim()}><Check size={17}/>{busy?"Saving...":record?"Update supplier":"Save supplier"}</button></div>
+    </form>
+  </Modal>;
+  return <Modal title={(record?"Edit ":"Add ")+"customer company"} sub="Fill in the details below." close={close}>
+    <form onSubmit={submit}>
       <label>{isBranch?"Supplier":"Customer"} type *</label><div className="type-choice">
         <button type="button" className={recordType==="internal"?"on":""} onClick={()=>set(typeKey,"internal")}><Building2 size={18}/><span><strong>Internal</strong><small>Supun group</small></span></button>
         <button type="button" className={recordType==="external"?"on":""} onClick={()=>set(typeKey,"external")}>{isBranch?<Truck size={18}/>:<Users size={18}/>}<span><strong>External</strong><small>Outside company</small></span></button>
@@ -626,6 +674,7 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
   const [quantities,setQuantities]=useState(()=>Object.fromEntries((record?.items||[]).map(l=>[l.pid,l.qty])));
   const [prices,setPrices]=useState(()=>Object.fromEntries((record?.items||[]).map(l=>[l.pid,purchase?l.cost:l.price])));
   const [query,setQuery]=useState(""),[note,setNote]=useState(record?.note||"");
+  const [availableOnly,setAvailableOnly]=useState(true);
   const [importing,setImporting]=useState(false);
   const [importError,setImportError]=useState("");
   const [imported,setImported]=useState(null);
@@ -658,7 +707,7 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
       setImportError(error.message||"Could not read the Excel file.");
     } finally {setImporting(false);}
   };
-  const items=active(d.products).filter(p=>p.name.toLowerCase().includes(query.toLowerCase()))
+  const items=active(d.products).filter(p=>p.name.toLowerCase().includes(query.toLowerCase())&&(purchase||!availableOnly||p.stock>0||number(quantities[p.id])>0))
     .sort((a,b)=>Number(number(quantities[b.id])>0)-Number(number(quantities[a.id])>0)||a.name.localeCompare(b.name));
   const lines=d.products.filter(p=>number(quantities[p.id])>0).map(p=>({pid:p.id,qty:number(quantities[p.id]),
     [purchase?"cost":"price"]:number(prices[p.id]??(purchase?p.cost:p.sell))}));
@@ -669,17 +718,17 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
     action(route+(record?"/"+record.n:""),record?"PUT":"POST",purchase?{sid:Number(party),items:lines}:{cid:Number(party),items:lines,note},
       (purchase?"Stock request":"Customer order")+" saved.",purchase?"pos":"orders");
   };
-  return <Modal wide title={purchase?(record?"Edit stock request":"Request stock from branch"):(record?"Edit customer order":"New customer order")}
+  return <Modal wide className={purchase?"po-document-modal":"order-document-modal"} HeaderIcon={purchase?null:ShoppingBag} title={purchase?(record?"Edit Purchase Order (PO)":"Create Purchase Order (PO)"):(record?"Edit Customer Order":"New Customer Order")}
     sub={purchase?"Make a PO for any supplier. Stock changes only after goods are received.":"Choose a company, then select what they want to order."} close={close}>
-    <form onSubmit={handle}>
-      <label>{purchase?"Supplier":"Customer company"} *</label><select value={party} required onChange={e=>setParty(e.target.value)}>
+    <form className={purchase?"po-document-form":"order-document-form"} onSubmit={handle}>
+      <div className={purchase?"po-supplier-panel":"order-customer-panel"}><label>{purchase?"Select Supplier":"Customer company"} *</label><select value={party} required onChange={e=>setParty(e.target.value)}>
         <option value="">Choose {purchase?"branch":"company"}</option>
-        {(record?[...parties,...(purchase?d.branches:d.customers).filter(x=>x.id===(purchase?record.sid:record.cid)&&!x.active)]:parties).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
-      <div className="notice"><Info size={18}/>{purchase?"An item can be requested from any branch, even if it has a different usual branch.":"You cannot send more than the available stock when making a delivery."}</div>
+        {(record?[...parties,...(purchase?d.branches:d.customers).filter(x=>x.id===(purchase?record.sid:record.cid)&&!x.active)]:parties).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+      <div className={purchase?"notice po-form-notice":"notice order-form-notice"}><Info size={18}/>{purchase?"An item can be requested from any branch, even if it has a different usual branch.":"Stock availability is shown for planning. Goods reduce stock only when they are dispatched."}</div>
       {purchase&&<div className="po-excel">
         <div className="po-excel-heading"><span className="po-excel-symbol"><Download size={20}/></span>
           <div><strong>Ordering lots of items?</strong><small>Use Excel instead of adding everything by hand.</small></div></div>
-        <div className="po-excel-steps"><span>1. Download</span><span>2. Fill Quantity in Excel</span><span>3. Upload & check</span></div>
+        <div className="po-excel-steps"><span><b>1</b>Download</span><i>→</i><span><b>2</b>Fill Quantities</span><i>→</i><span><b>3</b>Upload &amp; Check</span></div>
         <div className="po-excel-actions">
           <a className="btn ghost sm" href="/api/po-template" download="StockEasy_PO_Template.xlsx">
             <Download size={16}/> Download Excel template</a>
@@ -689,26 +738,23 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
               disabled={importing} onChange={onExcelUpload} hidden aria-label="Upload filled Excel template"/>
           </label>
         </div>
-        <p className="po-excel-help">Choose the supplier above. Fill only the <b>Quantity</b> column (E) for items you need. You can also change Unit Cost (F).
-          The upload replaces your current item selection, but does not create the PO until you press Save.</p>
+        <p className="po-excel-help">Choose the supplier above and fill the <b>Quantity</b> column for the items you need. Uploading replaces the current selection but does not create the PO until you press Save.</p>
         {importError&&<div className="po-excel-error" role="alert"><AlertTriangle size={17}/><span>{importError}</span></div>}
         {imported&&<div className="po-excel-success" role="status"><Check size={18}/>
-          <span><b>{imported.count} items loaded from Excel.</b> Please check quantities and prices below before saving.</span>
+          <span><b>{imported.count} items loaded from Excel.</b> Please check the quantities below before saving.</span>
           <button type="button" className="icon-btn" title="Dismiss" aria-label="Dismiss import message" onClick={()=>setImported(null)}><X size={16}/></button></div>}
       </div>}
       <h4>Select items & quantities {purchase&&<span className="po-excel-optional">(or use Excel above)</span>}</h4>
-      <SearchBox value={query} change={setQuery} placeholder="Find an item…"/>
-      <div className="form-item-list">{items.length?items.map(p=>{
+      <div className={purchase?"":"order-product-tools"}><SearchBox value={query} change={setQuery} placeholder="Find an item…"/>{!purchase&&<label className="available-toggle"><input type="checkbox" checked={availableOnly} onChange={e=>setAvailableOnly(e.target.checked)}/><span>Available items only</span></label>}</div>
+      <div className={purchase?"form-item-list po-product-list":"form-item-list order-product-list"}>{items.length?items.map(p=>{
         const qty=number(quantities[p.id]),price=number(prices[p.id]??(purchase?p.cost:p.sell));
         return <div className="form-item" key={p.id}><Picture p={p}/><div className="grow">
-          <strong>{p.name}</strong><small>{p.stock} {p.unit} available · {rs(price)}</small></div>
+          <strong>{p.name}</strong><small>{p.stock} {p.unit} available</small></div>
           <Qty value={qty} onChange={v=>setQuantities(o=>({...o,[p.id]:v}))}/>
-          {qty>0&&<label className="tiny-price">Rs <input aria-label={"Price for "+p.name} type="number" min="0" step=".01" value={prices[p.id]??(purchase?p.cost:p.sell)}
-            onChange={e=>setPrices(o=>({...o,[p.id]:e.target.value}))}/></label>}</div>;
+          </div>;
       }):<p className="mute">No matching active items.</p>}</div>
-      {!purchase&&<><label>Order notes (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="Customer request or delivery instructions"/></>}
-      <div className="order-total"><span>{lines.length} item(s) selected</span><strong>Total: {rs(total)}</strong></div>
-      <Controls busy={busy||importing} close={close} valid={!!party&&lines.length>0} label={record?"Update order":purchase?"Create PO":"Create customer order"}/>
+      {!purchase&&<div className="order-notes"><label>Order notes (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="Customer request or delivery instructions"/></div>}
+      {purchase?<div className="po-sticky-summary"><div><strong>{lines.length}</strong> item{lines.length===1?"":"s"} selected</div><Controls busy={busy||importing} close={close} valid={!!party&&lines.length>0} label={record?"Update PO":"Save Purchase Order"}/></div>:<div className="order-sticky-summary"><div><strong>{lines.length}</strong> item{lines.length===1?"":"s"} selected</div><div><button className="btn ghost" type="button" onClick={close}><X size={16}/> Cancel</button><button className="btn" type="submit" disabled={busy||!party||!lines.length}><Check size={17}/>{busy?"Saving…":record?"Update Customer Order":"Create Customer Order"}</button></div></div>}
     </form>
   </Modal>;
 }
@@ -789,6 +835,12 @@ function StaffForm({record,busy,close,action}) {
       {record&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Account active</label>}
       <Controls busy={busy} close={close} valid={!!f.username.trim()&&(!!record||f.password.length>=8)} label="Save staff account"/>
     </form>
+  </Modal>;
+}
+function StaffPermissionsView({record,close}) {
+  return <Modal title={record.username} sub={record.role==="admin"?"Administrator · Full system access":"Current module permissions"} close={close}>
+    <div className="permission-panel"><div className="permission-head"><span>System module</span><span>Permission</span></div>{ACCESS_MODULES.map(([key,label])=><div className="permission-row" key={key}><span>{label}</span><Pill kind={record.role==="admin"||record.permissions?.[key]==="edit"?"good":record.permissions?.[key]==="view"?"warn":"off"}>{record.role==="admin"?"Edit":record.permissions?.[key]||"None"}</Pill></div>)}</div>
+    <div className="form-actions"><button className="btn ghost" onClick={close}>Close</button></div>
   </Modal>;
 }
 function DocumentView({modal,d,branch,customer,product,openProduct,close}) {
