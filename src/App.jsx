@@ -331,23 +331,28 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
 }
 
 function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
+  const [q,setQ]=useState(""),[statusFilter,setStatusFilter]=useState("all");
+  const receivedUnits=d.grns.filter(g=>g.status==="Active").reduce((sum,g)=>sum+g.lines.reduce((n,l)=>n+l.qty,0),0);
+  const activeGrns=d.grns.filter(g=>g.status==="Active").length;
+  const list=d.grns.filter(g=>(statusFilter==="all"||g.status===statusFilter)&&[g.id,g.poId,branch(g.sid).name,g.by,g.note,g.status,...g.lines.map(l=>product(l.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
     <SectionHeading title="Goods received (GRN)" sub="Every delivery received from a supplier increases your stock."/>
     {!d.grns.length?<Empty Icon={PackageCheck} title="No goods received yet" sub="Open a stock request and select Receive goods."/>:
-      <div className="list">{d.grns.map(g=><div className="card compact-doc" key={g.n}>
-        <div className="doc-top"><span className="row-icon"><PackageCheck/></span><div className="grow">
-          <strong>{g.id} <span className="muted-sep">·</span> {g.poId}</strong>
-          <div className="mute">{branch(g.sid).name} · {today(g.date)} · Received by {g.by}</div>
-        </div><State value={g.status}/></div>
-        <div className="doc-items">{g.lines.map(l=><span key={l.pid}>{product(l.pid).name} × {l.qty}</span>)}</div>
-        {g.note&&<p className="mute">Note: {g.note}</p>}
-        <div className="card-actions">
-          <button className="btn ghost sm" onClick={()=>setModal({type:"view-grn",record:g})}><Printer size={15}/> View / Print</button>
-          {canEdit&&g.status==="Active"&&<button className="btn ghost sm" onClick={()=>reason("Reverse "+g.id,
-            "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}>
-            <RotateCcw size={15}/> Reverse GRN</button>}
-        </div>
-      </div>)}</div>}
+      <><div className="grn-summary"><div><span className="grn-summary-icon"><PackageCheck size={20}/></span><span><small>Total GRNs</small><strong>{d.grns.length}</strong></span></div><div><span><small>Active receipts</small><strong>{activeGrns}</strong></span></div><div><span><small>Units in stock</small><strong>{receivedUnits}</strong></span></div></div>
+      <div className="list-tools grn-tools"><SearchBox value={q} change={setQ} placeholder="Search GRN, PO, supplier or item…"/>
+        <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter GRNs by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Reversed">Reversed</option></select></div>
+      <div className="result-count"><strong>{list.length}</strong> of {d.grns.length} GRNs shown</div>
+      {!list.length?<Empty Icon={Search} title="No matching GRNs" sub="Change the search text or status filter."/>:<div className="grn-table-wrap"><div className="grn-table-head grn-table-row"><span>GRN / Date</span><span>Purchase order</span><span>Supplier</span><span>Received items</span><span>Received by / Note</span><span>Status</span><span>Actions</span></div>
+        {list.map(g=>{const totalQty=g.lines.reduce((sum,l)=>sum+l.qty,0);return <div className="grn-table-row" key={g.n}>
+          <div className="po-ref grn-cell"><strong>{g.id}</strong><small>{today(g.date)}</small></div>
+          <div className="grn-po grn-cell"><strong>{g.poId}</strong><small>Purchase order</small></div>
+          <div className="grn-supplier grn-cell"><strong>{branch(g.sid).name}</strong><small>Supplier</small></div>
+          <div className="po-item-summary grn-cell"><strong>{totalQty} unit{totalQty===1?"":"s"} · {g.lines.length} item{g.lines.length===1?"":"s"}</strong><small>{g.lines.slice(0,2).map(l=>`${product(l.pid).name} × ${l.qty}`).join(", ")}{g.lines.length>2?` +${g.lines.length-2} more`:""}</small></div>
+          <div className="movement-note grn-cell"><strong>{g.by||"Staff"}</strong><small>{g.note||"No note"}</small></div><div className="grn-status grn-cell"><State value={g.status}/><small>GRN status</small></div>
+          <div className="grn-actions grn-cell"><div><button className="grn-action view" title="Open and print this GRN" onClick={()=>setModal({type:"view-grn",record:g})}><Eye size={14}/><span>View</span></button>
+            {canEdit&&g.status==="Active"&&<button className="grn-action reverse" title="Reverse this GRN and remove its quantities from stock" onClick={()=>reason("Reverse "+g.id,
+              "This removes the received quantity from stock and records the correction.", "/grns/"+g.n+"/reverse","grns")}><RotateCcw size={14}/><span>Reverse</span></button>}</div><small>Manage GRN</small></div>
+        </div>})}</div>}</>}
   </>;
 }
 
@@ -645,11 +650,19 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
   return <Modal wide title={title} sub={hint} close={close}>
     <form onSubmit={handle}>
       <div className="notice"><Info size={19}/> {isGRN?"From PO":isReturn?"From delivery":"From customer order"}: <strong>{doc.id}</strong></div>
+      {isGRN?<div className="grn-entry-table"><div className="grn-entry-row grn-entry-head"><span>Item</span><span>Ordered</span><span>Received</span><span>Still expected</span><span>Receive now</span><span>Stock after</span></div>
+        {options.map(l=>{const receive=number(q[l.pid]);return <div className="grn-entry-row" key={l.pid}>
+          <div className="inventory-item"><Picture p={l.p}/><span><strong>{l.p?.name}</strong><small>{l.p?.sku||"No item code"}</small></span></div>
+          <strong>{l.qty} {l.p?.unit}</strong><span>{l.received||0} {l.p?.unit}</span><strong className="grn-remaining">{l.remaining} {l.p?.unit}</strong>
+          <div>{l.max>0?<Qty value={receive} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">Complete</Pill>}</div>
+          <span className="grn-stock-after"><strong>{(l.p?.stock||0)+receive}</strong> {l.p?.unit}</span>
+        </div>})}</div>:
       <div className="form-item-list">{options.map(l=><div className="form-item" key={l.pid}>
         <Picture p={l.p}/><div className="grow"><strong>{l.p?.name}</strong>
-          <small>{isGRN?"Still expected":isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small></div>
+          <small>{isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small></div>
         {l.max>0?<Qty value={number(q[l.pid])} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">0 available</Pill>}
-      </div>)}</div>
+      </div>)}</div>}
+      {isGRN&&<div className="order-total"><span>{lines.length} item{lines.length===1?"":"s"} selected</span><strong>{lines.reduce((sum,l)=>sum+l.qty,0)} units to receive</strong></div>}
       {!isReturn&&<><label>{isGRN?"Received by":"Sent by"}</label><input value={by} onChange={e=>setBy(e.target.value)} placeholder="Your name (optional — login name is used if empty)"/></>}
       <label>{isReturn?"Why are the goods being returned? *":"Notes (optional)"}</label>
       <textarea rows={3} required={isReturn} value={note} onChange={e=>setNote(e.target.value)} placeholder={isReturn?"Example: Damaged or extra goods":"Optional delivery notes"}/>
