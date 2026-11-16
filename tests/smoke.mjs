@@ -60,6 +60,45 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", phone2: "071999999", address: "Office", notes: "Call before delivery", customer_type: "external" });
     const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
+    // Quote -> recorded customer approval -> exactly one CO, with prices preserved.
+    const expiry=new Date();expiry.setDate(expiry.getDate()+14);
+    const validUntil=[expiry.getFullYear(),String(expiry.getMonth()+1).padStart(2,"0"),String(expiry.getDate()).padStart(2,"0")].join("-");
+    const qtCode=await idOf("/quotations","code",{
+      cid,items:[{pid,qty:4,price:175.25}],valid_until:validUntil,note:"Offer valid for 14 days"
+    });
+    let qSnapshot=await snapshot();
+    assert.equal(qSnapshot.products.find(x=>x.id===pid).stock,0);
+    assert.equal(qSnapshot.quotations[0].id,qtCode);
+    assert.equal(qSnapshot.quotations[0].status,"Draft");
+    assert.equal(qSnapshot.quotations[0].items[0].price,175.25);
+    const qtN=qSnapshot.quotations[0].n;
+    await api("/quotations/"+qtN+"/convert","POST",{},409);
+    await api("/quotations/"+qtN,"PUT",{
+      cid,items:[{pid,qty:6,price:180}],valid_until:validUntil,note:"Final offer"
+    });
+    await api("/quotations/"+qtN+"/status","POST",{status:"Approved",note:"Cannot approve an unsent quote"},409);
+    await api("/quotations/"+qtN+"/status","POST",{status:"Sent"});
+    await api("/quotations/"+qtN,"PUT",{cid,items:[{pid,qty:1,price:150}],valid_until:validUntil},409);
+    await api("/quotations/"+qtN+"/status","POST",{status:"Approved",note:"Customer accepted by email"});
+    const conversion=(await api("/quotations/"+qtN+"/convert","POST",{})).data;
+    qSnapshot=await snapshot();
+    const converted=qSnapshot.orders.find(x=>x.id===conversion.code);
+    assert.ok(converted);
+    assert.equal(converted.items[0].qty,6);
+    assert.equal(converted.items[0].price,180);
+    assert.equal(qSnapshot.products.find(x=>x.id===pid).stock,0);
+    assert.equal(qSnapshot.quotations[0].status,"Converted");
+    assert.equal(qSnapshot.quotations[0].convertedN,converted.n);
+    assert.deepEqual(qSnapshot.quotations[0].actions.map(x=>x.action),
+      ["Created","Edited","Sent","Approved","Converted"]);
+    await api("/quotations/"+qtN+"/convert","POST",{},409);
+    await api("/customer-orders/"+converted.n,"PUT",{cid,items:[{pid,qty:3,price:2}]},409);
+    const rejectedCode=await idOf("/quotations","code",{cid,items:[{pid,qty:1,price:120}],valid_until:validUntil});
+    const rejectedN=(await snapshot()).quotations.find(x=>x.id===rejectedCode).n;
+    await api("/quotations/"+rejectedN+"/status","POST",{status:"Sent"});
+    await api("/quotations/"+rejectedN+"/status","POST",{status:"Rejected",note:"Customer did not accept"});
+    await api("/quotations/"+rejectedN+"/convert","POST",{},409);
+    await api("/quotations","POST",{cid,items:[{pid,qty:2,price:100}],valid_until:"2020-01-01"},400);
     // Excel template download is protected, and upload previews a PO without creating it.
     const templateResponse=await fetch(root+"/po-template",{headers:{Cookie:cookie}});
     assert.equal(templateResponse.status,200);
@@ -147,6 +186,8 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const restrictedData = (await api("/all", "GET", undefined, 200, restrictedCookie)).data;
     assert.ok(restrictedData.branches.length > 0);
     assert.equal(restrictedData.products.length, 0);
+    assert.equal(restrictedData.quotations.length,0);
+    await api("/quotations","POST",{cid,items:[{pid,qty:1,price:120}],valid_until:validUntil},403,restrictedCookie);
     await api("/branches", "POST", { name:"Forbidden supplier" }, 403, restrictedCookie);
     await api("/po-template", "GET", undefined, 403, restrictedCookie);
     await api("/po-import", "POST", {}, 403, restrictedCookie);
@@ -157,6 +198,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const viewerCookie = viewerLogin.response.headers.get("set-cookie")?.split(";")[0];
     await api("/all", "GET", undefined, 200, viewerCookie);
     await api("/branches", "POST", { name: "Should fail" }, 403, viewerCookie);
+    await api("/quotations","POST",{cid,items:[{pid,qty:1,price:150}],valid_until:validUntil},403,viewerCookie);
     await api("/staff/" + viewerId, "DELETE");
     await api("/customers/" + cid, "DELETE");
     assert.equal((await snapshot()).customers.find(x => x.id === cid).active, 0);
