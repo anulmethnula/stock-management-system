@@ -4,13 +4,14 @@
 <p align="center">A simple React system to manage goods from Supun branches to customer companies.</p>
 
 ## 🔄 How it works
-**Supun branch → PO (request) → GRN (receive) → Stock → Customer order → Delivery**
+**Supun branch → PO (request) → GRN (receive) → Stock → Customer quotation → Approval → Customer order → Delivery**
 
 - 🏢 **Branches:** Add, edit, remove or restore Supun branches.
 - 📦 **Items:** Photos, stock alerts, buying/selling prices.
 - 🧾 **PO + GRN:** Request from any branch; receive full or partial quantities.
 - 📊 **Excel PO:** Download an item template, fill quantities, upload and review before saving.
 - 🏬 **Customers:** Manage customer companies and orders.
+- 💰 **Quotations:** Create price offers, record customer approval/rejection, print or save as PDF, and convert approved quotes into one customer order without changing stock.
 - 🚚 **Deliveries:** Dispatch goods, reduce stock automatically, print delivery notes.
 - ↩️ **Returns & corrections:** Reverse mistakes safely with stock history.
 - 🔐 **Staff accounts:** Admin, staff and view-only access.
