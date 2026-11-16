@@ -59,6 +59,7 @@ export function registerQuotationRoutes(app, h) {
     if(status==="Approved")check(quote.valid_until>=today(),
       "Quotation has expired. Create a new quotation.",409);
     const note=str(req.body?.note,500);
+    if(status!=="Sent")check(note.length>=3,"Describe how the customer approved or rejected the quotation.");
     db.prepare("UPDATE customer_quotations SET status=? WHERE id=?").run(status,quote.id);
     audit(quote.id,status,req.user.username,note);
     return {ok:true};
