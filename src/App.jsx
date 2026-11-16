@@ -188,7 +188,7 @@ export default function App() {
         {page === "pos" && <PurchaseOrders {...ctx} />}
         {page === "grns" && <GoodsReceived {...ctx} />}
         {page === "quotes" && <QuotationPage {...ctx} />}
-        {page === "orders" && <CustomerOrders {...ctx} />}
+        {page === "orders" && <CustomerOrders {...ctx} setPage={setPage} />}
         {page === "deliveries" && <Deliveries {...ctx} />}
         {page === "history" && <StockHistory {...ctx} />}
         {page === "reports" && <Reports {...ctx} />}
@@ -434,7 +434,7 @@ function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
   </>;
 }
 
-function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
+function CustomerOrders({d,customer,product,setModal,confirm,canEdit,setPage,user}) {
   const [q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open"),[dateFilter,setDateFilter]=useState("all"),[page,setPage]=useState(1);
   const customers=[...new Set(d.orders.map(o=>o.cid))].map(id=>customer(id));
   const dateMatches=date=>{if(dateFilter==="all")return true;const now=new Date(),value=new Date(String(date).slice(0,10)+"T00:00:00"),days=Math.floor((new Date(now.getFullYear(),now.getMonth(),now.getDate())-value)/86400000);return dateFilter==="today"?days===0:dateFilter==="7"?days>=0&&days<7:dateFilter==="30"?days>=0&&days<30:value.getFullYear()===now.getFullYear()&&value.getMonth()===now.getMonth();};
@@ -444,6 +444,7 @@ function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
   return <div className="customer-orders-page">
     <SectionHeading title="Customer orders" sub="Record goods requested by customer companies before sending them."
       action={canEdit?()=>setModal({type:"order"}):null} label="New customer order"/>
+    {accessLevel(user,"quotations")!=="none"&&<div className="quote-shortcut"><button type="button" className="text-button" onClick={()=>setPage("quotes")}><FileText size={16}/> View customer quotations <ArrowRight size={14}/></button></div>}
     <div className="customer-order-summary"><button type="button" className={"green "+(statusFilter==="all"?"on":"")} onClick={()=>setStatusFilter("all")}><span><ShoppingBag size={19}/></span><small>Total orders</small><strong>{d.orders.length}</strong></button><button type="button" className={"blue "+(statusFilter==="Open"?"on":"")} onClick={()=>setStatusFilter("Open")}><span><Truck size={19}/></span><small>Waiting to send</small><strong>{d.orders.filter(o=>o.status==="Open").length}</strong></button><button type="button" className={"amber "+(statusFilter==="Part dispatched"?"on":"")} onClick={()=>setStatusFilter("Part dispatched")}><span><Package size={19}/></span><small>Part dispatched</small><strong>{d.orders.filter(o=>o.status==="Part dispatched").length}</strong></button><button type="button" className={"green "+(statusFilter==="Dispatched"?"on":"")} onClick={()=>setStatusFilter("Dispatched")}><span><Check size={19}/></span><small>Completed</small><strong>{d.orders.filter(o=>o.status==="Dispatched").length}</strong></button></div>
     <div className="list-tools customer-order-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
