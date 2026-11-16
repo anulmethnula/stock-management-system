@@ -87,6 +87,7 @@ export default function App() {
   const [d, setD] = useState(null), [user, setUser] = useState(null), [loading, setLoading] = useState(true);
   const [page, setPage] = useState("home"), [modal, setModal] = useState(null);
   const [error, setError] = useState(""), [toast, setToast] = useState(""), [busy, setBusy] = useState(false);
+  const [welcome,setWelcome]=useState(true);
   const [staff, setStaff] = useState([]);
   const [productFocus,setProductFocus]=useState(null);
   const refresh = async () => {
@@ -97,6 +98,7 @@ export default function App() {
   useEffect(() => { refresh().catch(e => { if (e.status !== 401) setError(e.message); }).finally(() => setLoading(false)); }, []);
   useEffect(() => { delete document.documentElement.dataset.theme; localStorage.removeItem("se-theme"); }, []);
   useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(""), 3600); return () => clearTimeout(id); }, [toast]);
+  useEffect(()=>{if(!user||!d)return;setWelcome(true);const id=setTimeout(()=>setWelcome(false),2100);return()=>clearTimeout(id);},[user?.id,!!d]);
   useEffect(() => {
     if (page === "staff" && user?.role === "admin") request("/staff").then(result => setStaff(result.staff)).catch(e => setError(e.message));
   }, [page, user?.role]);
@@ -147,6 +149,7 @@ export default function App() {
   const openProduct=pid=>{if(accessLevel(user,"products")==="none"){setError("You do not have access to Items.");setModal(null);return;}setProductFocus(pid);setPage("products");setModal(null);};
   const ctx = { d, branch, customer, product, canEdit, user, action, busy, setModal, confirm, reason, productFocus, setProductFocus, openProduct };
   return <div className="app">
+    {welcome&&<WelcomeScreen close={()=>setWelcome(false)}/>}
     <aside className="side">
       <div className="logo"><img className="brand-full-logo" src="/logo.png" alt="Supun Group of Companies"/></div>
       <nav className="side-menu" aria-label="Main navigation">
@@ -206,6 +209,19 @@ export default function App() {
     </main>
     {modal && <Dialog modal={modal} ctx={ctx} staff={staff} close={() => setModal(null)}/>}
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}</div>}
+  </div>;
+}
+
+function WelcomeScreen({close}) {
+  const hour=new Date().getHours(),greeting=hour<12?["Good Morning","☀️"]:hour<17?["Good Afternoon","🌤️"]:hour<21?["Good Evening","🌆"]:["Good Night","🌙"];
+  return <div className="welcome-screen" role="dialog" aria-modal="true" aria-label="Welcome to StockEasy">
+    <svg className="welcome-waves" viewBox="0 0 1440 700" preserveAspectRatio="none" aria-hidden="true"><path d="M0 430 C220 330 390 510 650 395 S1040 230 1440 360 L1440 700 L0 700Z"/><path d="M0 520 C250 415 470 585 730 470 S1110 330 1440 455 L1440 700 L0 700Z"/></svg>
+    <button className="welcome-skip" type="button" onClick={close}>Skip</button>
+    <div className="welcome-glow" aria-hidden="true"/>
+    <div className="welcome-content"><div className="welcome-cube" aria-hidden="true"><span className="cube-front"><Package size={48}/></span><span className="cube-top"/><span className="cube-side"/></div>
+      <p className="welcome-greeting">{greeting[0]} <span>{greeting[1]}</span></p><h1>Welcome to <strong>StockEasy</strong></h1><p className="welcome-sub">Inventory &amp; Stock Management System</p>
+      <div className="welcome-loader" aria-label="Opening dashboard"><i/></div>
+    </div>
   </div>;
 }
 
