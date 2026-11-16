@@ -359,19 +359,23 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
 }
 
 function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
-  const [q,setQ]=useState(""),[supplierFilter,setSupplierFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open");
+  const [q,setQ]=useState(""),[supplierFilter,setSupplierFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open"),[page,setPage]=useState(1);
   const suppliers=[...new Set(d.pos.map(o=>o.sid))].map(id=>branch(id));
   const list=d.pos.filter(o => (supplierFilter==="all"||Number(supplierFilter)===o.sid) && (statusFilter==="all"||(statusFilter==="open"?["Ordered","Part received"].includes(o.status):o.status===statusFilter)) && [o.id,branch(o.sid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const counts={total:d.pos.length,ordered:d.pos.filter(o=>o.status==="Ordered").length,part:d.pos.filter(o=>o.status==="Part received").length,completed:d.pos.filter(o=>o.status==="Received").length};
+  const totalPages=Math.max(1,Math.ceil(list.length/10)),currentPage=Math.min(page,totalPages),visible=list.slice((currentPage-1)*10,currentPage*10);
+  useEffect(()=>setPage(1),[q,supplierFilter,statusFilter]);
   return <>
     <SectionHeading title="Stock requests (PO)" sub="Request goods from any supplier. A PO does not add stock until a GRN is saved."
       action={canEdit?()=>setModal({type:"po"}):null} label="Request stock"/>
+    <div className="po-summary">{[[ClipboardList,"Total requests",counts.total,"all","green"],[ShoppingBag,"Ordered",counts.ordered,"Ordered","blue"],[Truck,"Part received",counts.part,"Part received","amber"],[Check,"Completed",counts.completed,"Received","purple"]].map(([Icon,label,value,key,tone])=><button type="button" key={key} className={`${tone} ${statusFilter===key?"on":""}`} onClick={()=>setStatusFilter(key)}><span><Icon size={20}/></span><div><strong>{value}</strong><small>{label}</small></div></button>)}</div>
     <div className="list-tools po-request-tools"><SearchBox value={q} change={setQ} placeholder="Search PO, supplier or item…"/>
       <select className="filter-select" value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} aria-label="Filter by supplier"><option value="all">All suppliers</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to receive</option><option value="Ordered">Ordered</option><option value="Part received">Part received</option><option value="Received">Received</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select></div>
     <div className="result-count"><strong>{list.length}</strong> of {d.pos.length} stock requests shown</div>
     {!list.length?<Empty Icon={ClipboardList} title="No matching stock requests" sub="Change the filters or create a new request."/>:
-      <div className="po-request-table"><div className="po-request-head po-request-row"><span>PO / Date</span><span>Supplier</span><span>Items</span><span>Receiving Progress</span><span>Status</span><span>Actions</span></div>
-        {list.map(po=>{const qty=po.items.reduce((a,x)=>a+x.qty,0),received=po.items.reduce((a,x)=>a+x.received,0),percent=qty?Math.round(received/qty*100):0;return <div className="po-request-row" key={po.n}>
+      <div className="po-request-table"><div className="po-request-head po-request-row"><span>PO No. / Date</span><span>Supplier</span><span>Items</span><span>Receiving Progress</span><span>Status</span><span>Actions</span></div>
+        {visible.map(po=>{const qty=po.items.reduce((a,x)=>a+x.qty,0),received=po.items.reduce((a,x)=>a+x.received,0),percent=qty?Math.round(received/qty*100):0;return <div className="po-request-row" key={po.n}>
           <div className="po-ref po-request-ref"><strong>{po.id}</strong><small>{today(po.date)}</small></div>
           <div className="po-supplier po-request-supplier"><span className="row-icon"><ClipboardList size={17}/></span><strong>{branch(po.sid).name}</strong></div>
           <div className="po-item-summary po-request-items"><strong>{po.items.length} item{po.items.length===1?"":"s"} · {qty} unit{qty===1?"":"s"}</strong><small>{po.items.slice(0,2).map(l=>product(l.pid).name).join(", ")}{po.items.length>2?` +${po.items.length-2} more`:""}</small></div>
@@ -382,6 +386,7 @@ function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
             {canEdit&&po.status==="Ordered"&&<button className="icon-btn" title="Edit request" onClick={()=>setModal({type:"po",record:po})}><Pencil size={16}/></button>}
             {canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn danger" title="Cancel remaining request" onClick={()=>confirm("Cancel this stock request?","No goods will be removed from stock. Any GRNs already saved will stay in history.","/pos/"+po.n)}><X size={17}/></button>}</div>
         </div>})}</div>}
+    {!!list.length&&<div className="po-pagination"><span>Showing {(currentPage-1)*10+1}-{Math.min(currentPage*10,list.length)} of {list.length} requests</span><div><button className="icon-btn" disabled={currentPage===1} title="Previous page" onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" disabled={currentPage===totalPages} title="Next page" onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>}
   </>;
 }
 
