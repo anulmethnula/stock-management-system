@@ -83,6 +83,42 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
   price REAL NOT NULL DEFAULT 0,
   dispatched INTEGER NOT NULL DEFAULT 0
 );
+-- Customer quotations preserve the offered item names and agreed prices.
+-- Converting an approved quotation creates exactly one linked customer order.
+CREATE TABLE IF NOT EXISTS customer_quotations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  customer_name TEXT NOT NULL,
+  customer_address TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL,
+  valid_until TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Sent','Approved','Rejected','Converted')),
+  note TEXT NOT NULL DEFAULT '',
+  converted_order_id INTEGER REFERENCES customer_orders(id)
+);
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES customer_quotations(id),
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  item_name TEXT NOT NULL,
+  item_code TEXT NOT NULL DEFAULT '',
+  item_unit TEXT NOT NULL DEFAULT 'pieces',
+  qty INTEGER NOT NULL CHECK(qty > 0),
+  price REAL NOT NULL CHECK(price >= 0),
+  UNIQUE(quotation_id,product_id)
+);
+CREATE TABLE IF NOT EXISTS quotation_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES customer_quotations(id),
+  action TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_customer_quotations_customer ON customer_quotations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_quotations_status ON customer_quotations(status);
+
 CREATE TABLE IF NOT EXISTS deliveries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,

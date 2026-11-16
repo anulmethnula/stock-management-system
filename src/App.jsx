@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { QuotationPage, QuotationForm, QuotationView, QuotationDecision, QuotationConvert } from "./QuotationUI.jsx";
 import {
   LayoutDashboard, Package, Building2, Users, ClipboardList, PackageCheck,
   Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
   LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3, ExternalLink,
-  MapPin, Phone, UserRound, ChevronLeft, ChevronRight
+  MapPin, Phone, UserRound, ChevronLeft, ChevronRight, FileText
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -25,15 +26,15 @@ const isClosed = s => ["Received", "Cancelled", "Part cancelled", "Dispatched", 
 const active = arr => arr.filter(x => x.active);
 const number = value => Number(value) || 0;
 const Icons = { home: LayoutDashboard, products: Package, branches: Building2, customers: Users,
-  pos: ClipboardList, grns: PackageCheck, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
+  pos: ClipboardList, grns: PackageCheck, quotes: FileText, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
 const MENU = [
   ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
   ["customers", "Customers"], ["pos", "Stock requests"], ["grns", "Goods received"],
-  ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
+  ["quotes", "Quotations"], ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
 ];
 const PRODUCT_CATEGORIES = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
-const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
-const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
+const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",quotes:"quotations",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
+const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["quotations","Customer quotations"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
 const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="viewer"?"view":"edit"]));
 const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||(feature==="staff"?"none":user?.role==="viewer"?"view":"edit");
 
@@ -186,7 +187,8 @@ export default function App() {
         {page === "products" && <Products {...ctx} />}
         {page === "pos" && <PurchaseOrders {...ctx} />}
         {page === "grns" && <GoodsReceived {...ctx} />}
-        {page === "orders" && <CustomerOrders {...ctx} />}
+        {page === "quotes" && <QuotationPage {...ctx} />}
+        {page === "orders" && <CustomerOrders {...ctx} navigate={setPage} />}
         {page === "deliveries" && <Deliveries {...ctx} />}
         {page === "history" && <StockHistory {...ctx} />}
         {page === "reports" && <Reports {...ctx} />}
@@ -432,7 +434,7 @@ function GoodsReceived({d,branch,product,canEdit,reason,setModal}) {
   </>;
 }
 
-function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
+function CustomerOrders({d,customer,product,setModal,confirm,canEdit,navigate,user}) {
   const [q,setQ]=useState(""),[customerFilter,setCustomerFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open"),[dateFilter,setDateFilter]=useState("all"),[page,setPage]=useState(1);
   const customers=[...new Set(d.orders.map(o=>o.cid))].map(id=>customer(id));
   const dateMatches=date=>{if(dateFilter==="all")return true;const now=new Date(),value=new Date(String(date).slice(0,10)+"T00:00:00"),days=Math.floor((new Date(now.getFullYear(),now.getMonth(),now.getDate())-value)/86400000);return dateFilter==="today"?days===0:dateFilter==="7"?days>=0&&days<7:dateFilter==="30"?days>=0&&days<30:value.getFullYear()===now.getFullYear()&&value.getMonth()===now.getMonth();};
@@ -442,6 +444,7 @@ function CustomerOrders({d,customer,product,setModal,confirm,canEdit}) {
   return <div className="customer-orders-page">
     <SectionHeading title="Customer orders" sub="Record goods requested by customer companies before sending them."
       action={canEdit?()=>setModal({type:"order"}):null} label="New customer order"/>
+    {accessLevel(user,"quotations")!=="none"&&<div className="quote-shortcut"><button type="button" className="text-button" onClick={()=>navigate("quotes")}><FileText size={16}/> View customer quotations <ArrowRight size={14}/></button></div>}
     <div className="customer-order-summary"><button type="button" className={"green "+(statusFilter==="all"?"on":"")} onClick={()=>setStatusFilter("all")}><span><ShoppingBag size={19}/></span><small>Total orders</small><strong>{d.orders.length}</strong></button><button type="button" className={"blue "+(statusFilter==="Open"?"on":"")} onClick={()=>setStatusFilter("Open")}><span><Truck size={19}/></span><small>Waiting to send</small><strong>{d.orders.filter(o=>o.status==="Open").length}</strong></button><button type="button" className={"amber "+(statusFilter==="Part dispatched"?"on":"")} onClick={()=>setStatusFilter("Part dispatched")}><span><Package size={19}/></span><small>Part dispatched</small><strong>{d.orders.filter(o=>o.status==="Part dispatched").length}</strong></button><button type="button" className={"green "+(statusFilter==="Dispatched"?"on":"")} onClick={()=>setStatusFilter("Dispatched")}><span><Check size={19}/></span><small>Completed</small><strong>{d.orders.filter(o=>o.status==="Dispatched").length}</strong></button></div>
     <div className="list-tools customer-order-tools"><SearchBox value={q} change={setQ} placeholder="Search order, customer or item…"/>
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
@@ -534,15 +537,15 @@ function StockHistory({d,product,user,setModal}) {
 
 const REPORT_TYPES = [
   ["stock","Stock Summary Report",Package],["po","Stock Requests (PO) Report",ClipboardList],["grn","Goods Received (GRN) Report",PackageCheck],["orders","Customer Orders Report",ShoppingBag],
-  ["delivery","Deliveries & Returns Report",Truck],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
+  ["quotations","Customer Quotations Report",FileText],["delivery","Deliveries & Returns Report",Truck],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
 ];
 function Reports({d,branch,customer,product}) {
   const emptyFilters={from:"",to:"",sid:"all",cid:"all",pid:"all",status:"all"};
   const [type,setType]=useState("stock"),[filters,setFilters]=useState(emptyFilters),[report,setReport]=useState(null);
   const setFilter=(key,value)=>setFilters(o=>({...o,[key]:value})),config=REPORT_TYPES.find(x=>x[0]===type);
-  const usesDate=["po","grn","orders","delivery","movement"].includes(type),usesSupplier=["stock","po","grn","suppliers"].includes(type),usesCustomer=["orders","delivery","customers"].includes(type),usesItem=["stock","po","grn","orders","delivery","movement"].includes(type),usesStatus=!['suppliers','customers'].includes(type);
+  const usesDate=["po","grn","orders","quotations","delivery","movement"].includes(type),usesSupplier=["stock","po","grn","suppliers"].includes(type),usesCustomer=["orders","quotations","delivery","customers"].includes(type),usesItem=["stock","po","grn","orders","quotations","delivery","movement"].includes(type),usesStatus=!['suppliers','customers'].includes(type);
   const movementGroup=t=>/reversed/i.test(t)?"Reversal":/goods received/i.test(t)?"GRN":/customer return/i.test(t)?"Return":/deliver/i.test(t)?"Delivery":"Adjustment";
-  const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),delivery:[["Delivery","Delivery"],["Return","Return"],["Active","Active"],["Reversed","Reversed"]],movement:["GRN","Delivery","Return","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
+  const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),quotations:[...new Set(d.quotations.map(x=>x.status))].map(x=>[x,x]),delivery:[["Delivery","Delivery"],["Return","Return"],["Active","Active"],["Reversed","Reversed"]],movement:["GRN","Delivery","Return","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
   const dateOk=date=>(!filters.from||String(date).slice(0,10)>=filters.from)&&(!filters.to||String(date).slice(0,10)<=filters.to),hasItem=lines=>filters.pid==="all"||lines.some(l=>l.pid===Number(filters.pid)),selectedLines=lines=>lines.filter(l=>filters.pid==="all"||l.pid===Number(filters.pid)),sumQty=lines=>selectedLines(lines).reduce((n,l)=>n+l.qty,0);
   const build=()=>{
     let columns=[],rows=[],summary=[];
@@ -553,6 +556,13 @@ function Reports({d,branch,customer,product}) {
       const docs=d.pos.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["PO","Date","Supplier","Items","Requested","Received","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),r=lines.reduce((n,l)=>n+l.received,0);return[x.id,today(x.date),branch(x.sid).name,lines.map(l=>product(l.pid).name).join(", "),q,r,q-r,x.status]});summary=[["Requests",docs.length],["Requested",rows.reduce((n,r)=>n+Number(r[4]),0)],["Received",rows.reduce((n,r)=>n+Number(r[5]),0)]];
     } else if(type==="grn"){
       const docs=d.grns.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["GRN","Date","PO","Supplier","Items","Quantity","Received By","Status"];rows=docs.map(x=>[x.id,today(x.date),x.poId,branch(x.sid).name,selectedLines(x.lines).map(l=>product(l.pid).name).join(", "),sumQty(x.lines),x.by,x.status]);summary=[["GRNs",docs.length],["Units received",rows.reduce((n,r)=>n+Number(r[5]),0)],["Active",docs.filter(x=>x.status==="Active").length]];
+    } else if(type==="quotations"){
+      const docs=d.quotations.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));
+      columns=["Quotation","Date","Customer","Items","Quantity","Total (Rs)","Valid Until","Status","Customer Order"];
+      rows=docs.map(x=>{const lines=selectedLines(x.items),qty=lines.reduce((n,l)=>n+l.qty,0),value=lines.reduce((n,l)=>n+l.qty*l.price,0);
+        const linked=d.orders.find(o=>o.n===x.convertedN);
+        return [x.id,today(x.date),x.customerName,lines.map(l=>l.name).join(", "),qty,value.toFixed(2),x.validUntil,x.status,linked?.id||"—"];});
+      summary=[["Quotations",docs.length],["Total quoted (Rs)",rows.reduce((n,r)=>n+Number(r[5]),0).toFixed(2)],["Converted",docs.filter(x=>x.status==="Converted").length]];
     } else if(type==="orders"){
       const docs=d.orders.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["Order","Date","Customer","Items","Ordered","Dispatched","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),sent=lines.reduce((n,l)=>n+l.dispatched,0);return[x.id,today(x.date),customer(x.cid).name,lines.map(l=>product(l.pid).name).join(", "),q,sent,q-sent,x.status]});summary=[["Orders",docs.length],["Ordered",rows.reduce((n,r)=>n+Number(r[4]),0)],["Dispatched",rows.reduce((n,r)=>n+Number(r[5]),0)]];
     } else if(type==="delivery"){
@@ -608,6 +618,10 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
   if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d}/>;
   if(modal.type==="po") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="po"/>;
+  if(modal.type==="quotation") return <QuotationForm record={modal.record} d={d} close={close} busy={busy} action={action}/>;
+  if(modal.type==="view-quotation") return <QuotationView record={modal.record} d={d} close={close}/>;
+  if(modal.type==="quotation-decision") return <QuotationDecision record={modal.record} status={modal.status} close={close} busy={busy} action={action}/>;
+  if(modal.type==="quotation-convert") return <QuotationConvert record={modal.record} close={close} busy={busy} action={action}/>;
   if(modal.type==="order") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="order"/>;
   if(modal.type==="grn") return <MovementForm title="Receive goods (GRN)" type="grn" doc={modal.po} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="dispatch") return <MovementForm title="Send goods to customer" type="dispatch" doc={modal.order} d={d} close={close} busy={busy} action={action}/>;

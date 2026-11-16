@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import db, { passwordHash, passwordMatches } from "./db.js";
 import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
+import { registerQuotationRoutes } from "./quotations.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -61,14 +62,15 @@ const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${pr
 const sessionMs = 7 * 24 * 60 * 60 * 1000;
 const rememberedSessionMs = 30 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
-const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","deliveries","stock_history","reports","staff"];
+const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports","staff"];
 const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : role === "viewer" ? "view" : feature === "staff" ? "none" : "edit"]));
 const cleanPermissions = (value, role = "staff") => {
   if (role === "admin") return defaultPermissions("admin");
   let source = value;
   if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
   const fallback = defaultPermissions(role);
-  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
+  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "quotations" && ["none","view","edit"].includes(source?.customer_orders)
+    ? source.customer_orders : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
 };
 const publicUser = user => ({ id:user.id, username:user.username, role:user.role, permissions:cleanPermissions(user.permissions,user.role) });
 app.post("/api/login", (req, res) => {
@@ -127,14 +129,17 @@ app.get("/api/all", run(req => {
   return {
     user: publicUser(req.user),
     branches: canSee("suppliers","products","purchase_orders","goods_received","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
-    products: canSee("products","purchase_orders","goods_received","customer_orders","deliveries","stock_history","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
-    customers: canSee("customers","customer_orders","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
+    products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    customers: canSee("customers","customer_orders","quotations","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
     pos: canSee("purchase_orders","goods_received","reports") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
       .map(o => ({ ...o, items: poItems.filter(i => i.po_id === o.n) }))
       : [],
     grns: canSee("goods_received","reports") ? db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
       .map(g => ({ ...g, lines: grnLines.filter(l => l.grn_id === g.n) }))
       : [],
+    quotations: canSee("quotations","reports") ? db.prepare("SELECT id n,code id,customer_id cid,customer_name customerName,customer_address customerAddress,date,valid_until validUntil,status,note,converted_order_id convertedN FROM customer_quotations ORDER BY id DESC").all()
+      .map(q=>({...q,items:db.prepare("SELECT product_id pid,item_name name,item_code sku,item_unit unit,qty,price FROM quotation_items WHERE quotation_id=? ORDER BY id").all(q.n),
+        actions:db.prepare("SELECT action,actor,note,created_at at FROM quotation_actions WHERE quotation_id=? ORDER BY id").all(q.n)})) : [],
     orders: canSee("customer_orders","deliveries","reports") ? db.prepare("SELECT id n,code id,customer_id cid,date,status,note FROM customer_orders ORDER BY n DESC").all()
       .map(o => ({ ...o, items: orderItems.filter(i => i.order_id === o.n) }))
       : [],
@@ -219,7 +224,7 @@ app.put("/api/customers/:id", requireEdit("customers"), run(req => {
 }));
 app.delete("/api/customers/:id", requireEdit("customers"), run(req => {
   const id = find("customers", req.params.id).id;
-  const used = db.prepare("SELECT 1 FROM customer_orders WHERE customer_id=? LIMIT 1").get(id);
+  const used = db.prepare("SELECT 1 FROM customer_orders WHERE customer_id=? UNION SELECT 1 FROM customer_quotations WHERE customer_id=? LIMIT 1").get(id,id);
   if (used) db.prepare("UPDATE customers SET active=0 WHERE id=?").run(id);
   else db.prepare("DELETE FROM customers WHERE id=?").run(id);
   return { archived: !!used };
@@ -248,7 +253,7 @@ app.put("/api/products/:id", requireEdit("products"), run(req => {
 }));
 app.delete("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id;
-  const used = db.prepare("SELECT 1 FROM po_items WHERE product_id=? UNION SELECT 1 FROM customer_order_items WHERE product_id=? UNION SELECT 1 FROM stock_movements WHERE product_id=? LIMIT 1").get(id,id,id);
+  const used = db.prepare("SELECT 1 FROM po_items WHERE product_id=? UNION SELECT 1 FROM customer_order_items WHERE product_id=? UNION SELECT 1 FROM quotation_items WHERE product_id=? UNION SELECT 1 FROM stock_movements WHERE product_id=? LIMIT 1").get(id,id,id,id);
   if (used) db.prepare("UPDATE products SET active=0 WHERE id=?").run(id);
   else db.prepare("DELETE FROM products WHERE id=?").run(id);
   return { archived: !!used };
@@ -356,6 +361,7 @@ function orderPayload(b) {
   const lines = validateLines(b.items,"customer order").map(l => ({...l,price:money(l.price ?? l.product.sale_price,"Selling price")}));
   return {cid,lines,note:str(b.note,1000)};
 }
+registerQuotationRoutes(app, { db, requireEdit, run, transaction, find, ident, required, str, money, validateLines, today, code, check });
 app.post("/api/customer-orders", requireEdit("customer_orders"), run(req => transaction(() => {
   const {cid,lines,note}=orderPayload(req.body || {});
   const id=db.prepare("INSERT INTO customer_orders(code,customer_id,date,note) VALUES('',?,?,?)").run(cid,today(),note).lastInsertRowid;
@@ -367,6 +373,8 @@ app.post("/api/customer-orders", requireEdit("customer_orders"), run(req => tran
 })));
 app.put("/api/customer-orders/:id", requireEdit("customer_orders"), run(req => transaction(() => {
   const order=find("customer_orders",req.params.id);
+  check(!db.prepare("SELECT 1 FROM customer_quotations WHERE converted_order_id=?").get(order.id),
+    "Orders created from approved quotations cannot be edited. Create a separate order for changes.",409);
   check(order.status==="Open","Only customer orders with no dispatch can be edited.",409);
   const {cid,lines,note}=orderPayload(req.body || {});
   db.prepare("DELETE FROM customer_order_items WHERE order_id=?").run(order.id);
