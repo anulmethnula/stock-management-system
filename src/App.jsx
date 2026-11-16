@@ -485,12 +485,14 @@ function StockHistory({d,product,user,setModal}) {
       &&(typeFilter==="all"||group===typeFilter)&&(itemFilter==="all"||Number(itemFilter)===m.pid)
       &&(!from||date>=from)&&(!to||date<=to)&&(direction==="all"||(direction==="in"?m.qty>0:m.qty<0));
   });
-  const pageSize=20,totalPages=Math.max(1,Math.ceil(rows.length/pageSize)),currentPage=Math.min(page,totalPages),visible=rows.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  const totals={records:d.movements.length,in:d.movements.filter(m=>m.qty>0).reduce((n,m)=>n+m.qty,0),out:Math.abs(d.movements.filter(m=>m.qty<0).reduce((n,m)=>n+m.qty,0)),adjustments:d.movements.filter(m=>movementGroup(m.type)==="Adjustment").length};
+  const pageSize=10,totalPages=Math.max(1,Math.ceil(rows.length/pageSize)),currentPage=Math.min(page,totalPages),visible=rows.slice((currentPage-1)*pageSize,currentPage*pageSize);
   useEffect(()=>setPage(1),[q,typeFilter,itemFilter,from,to,direction]);
   const reset=()=>{setQ("");setTypeFilter("all");setItemFilter("all");setFrom("");setTo("");setDirection("all");};
   return <>
     <SectionHeading title="Stock history" sub="A permanent record of goods received, sent out, returned and corrected."
       action={user.role==="admin"?()=>setModal({type:"adjust"}):null} label="Correct stock" Icon={RefreshCw}/>
+    <div className="stock-history-summary"><button type="button" className={typeFilter==="all"&&direction==="all"?"on":""} onClick={()=>{setTypeFilter("all");setDirection("all")}}><span><History size={20}/></span><div><strong>{totals.records}</strong><small>Total records</small></div></button><button type="button" className={direction==="in"?"on stock-in":"stock-in"} onClick={()=>setDirection("in")}><span><ArrowDownLeft size={20}/></span><div><strong>{totals.in}</strong><small>Stock in</small></div></button><button type="button" className={direction==="out"?"on stock-out":"stock-out"} onClick={()=>setDirection("out")}><span><ArrowUpRight size={20}/></span><div><strong>{totals.out}</strong><small>Stock out</small></div></button><button type="button" className={typeFilter==="Adjustment"?"on adjustment":"adjustment"} onClick={()=>{setTypeFilter("Adjustment");setDirection("all")}}><span><BarChart3 size={20}/></span><div><strong>{totals.adjustments}</strong><small>Adjustments</small></div></button></div>
     <div className="stock-history-filters"><div className="stock-history-search stock-history-field"><span>Search</span><SearchBox value={q} change={setQ} placeholder="Search item, document or staff…"/></div>
       <label className="stock-history-field"><span>Movement Type</span><select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} aria-label="Filter by movement type"><option value="all">All movement types</option><option value="GRN">GRN</option><option value="Delivery">Delivery</option><option value="Return">Return</option><option value="Adjustment">Adjustment</option><option value="Reversal">Reversal</option></select></label>
       <label className="stock-history-field"><span>Item</span><select value={itemFilter} onChange={e=>setItemFilter(e.target.value)} aria-label="Filter by item"><option value="all">All items</option>{[...d.products].sort((a,b)=>a.name.localeCompare(b.name)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -506,10 +508,10 @@ function StockHistory({d,product,user,setModal}) {
         <div className="stock-history-item"><span className={"delta-icon "+(m.qty>0?"plus":"minus")}>{m.qty>0?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span><div><strong>{product(m.pid).name}</strong>{m.note&&<small>{m.note}</small>}</div></div>
         <div><span className="stock-history-type">{movementGroup(m.type)}</span><small className="stock-history-event">{m.type}</small></div>
         <div>{doc?.record?<button className="stock-history-reference" onClick={()=>setModal(doc)}>{m.reference}</button>:<span className="stock-history-reference plain">{m.reference}</span>}</div>
-        <strong className="stock-history-in">{m.qty>0?`+${m.qty}`:"—"}</strong><strong className="stock-history-out">{m.qty<0?m.qty:"—"}</strong>
+        <strong className={`stock-history-in ${m.qty>0?"has-value":""}`}>{m.qty>0?`+${m.qty}`:"—"}</strong><strong className={`stock-history-out ${m.qty<0?"has-value":""}`}>{m.qty<0?m.qty:"—"}</strong>
         <div className="stock-history-actor">{m.actor||"System"}</div><div className="stock-history-actions">{doc?.record?<button className="icon-btn" title={"View "+m.reference} aria-label={"View "+m.reference} onClick={()=>setModal(doc)}><Eye size={16}/></button>:<span>—</span>}</div>
       </div>})}</div>
-      {totalPages>1&&<div className="stock-history-pagination"><button className="btn ghost sm" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page <strong>{currentPage}</strong> of {totalPages}</span><button className="btn ghost sm" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}</>}
+      <div className="stock-history-pagination"><span>Showing {(currentPage-1)*pageSize+1}-{Math.min(currentPage*pageSize,rows.length)} of {rows.length} records</span><div><button className="icon-btn" title="Previous page" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" title="Next page" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div></>}
     {d.movements.length>=1000&&<p className="mute">Showing the latest 1,000 movements.</p>}
   </>;
 }
