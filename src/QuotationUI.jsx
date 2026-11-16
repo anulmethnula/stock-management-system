@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {FileText,Plus,Eye,Pencil,Send,Check,Printer,ArrowRight,Search,ShoppingBag,
-  X,CalendarDays,ClipboardCheck,Package,ShieldCheck,ChevronLeft,ChevronRight,Info} from "lucide-react";
+  X,CalendarDays,ClipboardCheck,Package,ShieldCheck,ChevronLeft,ChevronRight,Info,RotateCcw} from "lucide-react";
 
 const money=value=>"Rs "+Number(value||0).toLocaleString("en-LK",{minimumFractionDigits:2,maximumFractionDigits:2});
 const localDate=(days=0)=>{const x=new Date();x.setDate(x.getDate()+days);return [x.getFullYear(),String(x.getMonth()+1).padStart(2,"0"),String(x.getDate()).padStart(2,"0")].join("-");};
@@ -18,12 +18,12 @@ function QuotationModal({title,sub,close,children,wide=true}){
 function Status({q}){const status=displayStatus(q);return <span className={"quote-status quote-"+status.toLowerCase()}>{status}</span>}
 
 export function QuotationPage({d,customer,canEdit,user,setModal,action}){
-  const [search,setSearch]=useState(""),[status,setStatus]=useState("all"),[company,setCompany]=useState("all"),[page,setPage]=useState(1);
+  const [search,setSearch]=useState(""),[status,setStatus]=useState("all"),[company,setCompany]=useState("all"),[from,setFrom]=useState(""),[to,setTo]=useState(""),[page,setPage]=useState(1);
   const quotes=d.quotations||[];
   const rows=quotes.filter(q=>(status==="all"||displayStatus(q)===status)&&
-    (company==="all"||q.cid===Number(company))&&
+    (company==="all"||q.cid===Number(company))&&(!from||q.date>=from)&&(!to||q.date<=to)&&
     [q.id,q.customerName,...q.items.map(x=>x.name)].join(" ").toLowerCase().includes(search.toLowerCase()));
-  useEffect(()=>setPage(1),[search,status,company]);
+  useEffect(()=>setPage(1),[search,status,company,from,to]);
   const pageCount=Math.max(1,Math.ceil(rows.length/10)),current=Math.min(page,pageCount),visible=rows.slice((current-1)*10,current*10);
   const canConvert=canEdit&&(user.role==="admin"||user.permissions?.customer_orders==="edit");
   return <div className="quotations-page">
@@ -42,8 +42,10 @@ export function QuotationPage({d,customer,canEdit,user,setModal,action}){
       <label className="search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search quotation, company or item…"/></label>
       <select aria-label="Filter by customer" value={company} onChange={e=>setCompany(e.target.value)}><option value="all">All companies</option>{d.customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select aria-label="Filter by quotation status" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All statuses</option>{["Draft","Sent","Approved","Rejected","Converted","Expired"].map(x=><option key={x} value={x}>{x}</option>)}</select>
+      <label className="quote-date-filter"><span><CalendarDays size={15}/> From</span><input type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)} aria-label="Quotations from date"/></label>
+      <label className="quote-date-filter"><span><CalendarDays size={15}/> To</span><input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)} aria-label="Quotations to date"/></label>
+      <button type="button" className="btn ghost quote-reset" onClick={()=>{setSearch("");setCompany("all");setStatus("all");setFrom("");setTo("")}}><RotateCcw size={15}/> Reset</button>
     </div>
-    <p className="result-count"><strong>{rows.length}</strong> of {quotes.length} quotations shown</p>
     {!rows.length?<div className="empty"><FileText size={38}/><strong>No matching quotations</strong><p>Create a quotation or change your filters.</p></div>:
       <div className="quote-table">
         <div className="quote-table-row quote-table-head"><span>Quotation / Date</span><span>Customer</span><span>Items</span><span>Amount</span><span>Valid until</span><span>Status</span><span>Actions</span></div>
@@ -54,11 +56,11 @@ export function QuotationPage({d,customer,canEdit,user,setModal,action}){
           <div className="quote-money">{money(total(q))}</div><div className="quote-valid">{q.validUntil}</div>
           <div><Status q={q}/></div>
           <div className="quote-actions">
-            <button type="button" className="icon-btn" title="View / Print quotation" aria-label={"View "+q.id} onClick={()=>setModal({type:"view-quotation",record:q})}><Eye size={16}/></button>
-            {canEdit&&q.status==="Draft"&&<button type="button" className="icon-btn" title="Edit draft" onClick={()=>setModal({type:"quotation",record:q})}><Pencil size={16}/></button>}
-            {canEdit&&q.status==="Draft"&&<button type="button" className="icon-btn primary-icon" title="Mark as sent" onClick={()=>action("/quotations/"+q.n+"/status","POST",{status:"Sent"},"Quotation marked as sent.","quotes")}><Send size={16}/></button>}
-            {canEdit&&q.status==="Sent"&&displayStatus(q)!=="Expired"&&<button type="button" className="icon-btn primary-icon" title="Record customer approval" onClick={()=>setModal({type:"quotation-decision",record:q,status:"Approved"})}><Check size={16}/></button>}
-            {canEdit&&q.status==="Sent"&&<button type="button" className="icon-btn danger" title="Record customer rejection" onClick={()=>setModal({type:"quotation-decision",record:q,status:"Rejected"})}><X size={16}/></button>}
+            <button type="button" className="icon-btn quote-action-btn" title="View / Print quotation" aria-label={"View "+q.id} onClick={()=>setModal({type:"view-quotation",record:q})}><Eye size={16}/><span>View</span></button>
+            {canEdit&&q.status==="Draft"&&<button type="button" className="icon-btn quote-action-btn" title="Edit draft" onClick={()=>setModal({type:"quotation",record:q})}><Pencil size={16}/><span>Edit</span></button>}
+            {canEdit&&q.status==="Draft"&&<button type="button" className="icon-btn primary-icon quote-action-btn" title="Mark as sent" onClick={()=>action("/quotations/"+q.n+"/status","POST",{status:"Sent"},"Quotation marked as sent.","quotes")}><Send size={16}/><span>Send</span></button>}
+            {canEdit&&q.status==="Sent"&&displayStatus(q)!=="Expired"&&<button type="button" className="icon-btn primary-icon quote-action-btn" title="Record customer approval" onClick={()=>setModal({type:"quotation-decision",record:q,status:"Approved"})}><Check size={16}/><span>Approve</span></button>}
+            {canEdit&&q.status==="Sent"&&<button type="button" className="icon-btn danger quote-action-btn" title="Record customer rejection" onClick={()=>setModal({type:"quotation-decision",record:q,status:"Rejected"})}><X size={16}/><span>Reject</span></button>}
             {canConvert&&q.status==="Approved"&&displayStatus(q)!=="Expired"&&<button type="button" className="btn sm" title="Convert to customer order" onClick={()=>setModal({type:"quotation-convert",record:q})}><ShoppingBag size={15}/> Convert</button>}
           </div>
         </div>)}

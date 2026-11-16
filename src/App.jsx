@@ -29,8 +29,9 @@ const Icons = { home: LayoutDashboard, products: Package, branches: Building2, c
   pos: ClipboardList, grns: PackageCheck, quotes: FileText, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
 const MENU = [
   ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
-  ["customers", "Customers"], ["pos", "Stock requests"], ["grns", "Goods received"],
-  ["quotes", "Quotations"], ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
+  ["pos", "Stock Requests (PO)"], ["grns", "Goods Received (GRN)"], ["customers", "Customers"],
+  ["quotes", "Quotations"], ["orders", "Customer Orders"], ["deliveries", "Deliveries"],
+  ["history", "Stock History"], ["reports", "Reports"], ["staff", "Staff"]
 ];
 const PRODUCT_CATEGORIES = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
 const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",quotes:"quotations",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
@@ -450,7 +451,6 @@ function CustomerOrders({d,customer,product,setModal,confirm,canEdit,navigate,us
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="open">Waiting to send</option><option value="Open">Open</option><option value="Part dispatched">Part dispatched</option><option value="Dispatched">Dispatched</option><option value="Cancelled">Cancelled</option><option value="Part cancelled">Part cancelled</option><option value="all">All statuses</option></select>
       <select className="filter-select" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} aria-label="Filter by date"><option value="all">All dates</option><option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="month">This month</option></select></div>
-    <div className="result-count"><strong>{list.length}</strong> of {d.orders.length} customer orders shown</div>
     {!list.length?<Empty Icon={ShoppingBag} title="No matching customer orders" sub="Change the filters or create a new order."/>:
       <><div className="po-request-table customer-order-table"><div className="po-request-head po-request-row"><span>Order / Date</span><span>Customer</span><span>Items</span><span>Dispatch Progress</span><span>Status</span><span>Actions</span></div>
         {visible.map(o=>{const qty=o.items.reduce((s,l)=>s+l.qty,0),shipped=o.items.reduce((s,l)=>s+l.dispatched,0),percent=qty?Math.round(shipped/qty*100):0;return <div className="po-request-row customer-order-row" key={o.n}>
@@ -479,7 +479,6 @@ function Deliveries({d,customer,product,setModal,canEdit,reason}) {
     <div className="list-tools po-tools"><SearchBox value={q} change={setQ} placeholder={tab==="deliveries"?"Search delivery, customer or item…":"Search return, customer or item…"}/>
       <select className="filter-select" value={customerFilter} onChange={e=>setCustomerFilter(e.target.value)} aria-label="Filter by customer"><option value="all">All customers</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
       <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Reversed">Reversed</option></select></div>
-    <div className="result-count"><strong>{rows.length}</strong> of {source.length} {tab==="deliveries"?"deliveries":"returns"} shown</div>
     {!rows.length?<Empty Icon={tab==="deliveries"?Truck:RotateCcw} title={tab==="deliveries"?"No matching deliveries":"No matching returns"} sub="Change the filters to find another record."/>:
       <div className="movement-table-wrap"><div className="movement-table-head movement-table-row"><span>Document / Date</span><span>Customer</span><span>Source</span><span>Items</span><span>{tab==="deliveries"?"Sent by / Note":"Reason"}</span><span>Status</span><span>Actions</span></div>
         {rows.map(x=><div className="movement-table-row" key={x.n}><div className="po-ref"><strong>{x.id}</strong><small>{today(x.date)}</small></div>
