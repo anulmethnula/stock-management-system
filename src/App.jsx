@@ -874,11 +874,13 @@ function DocumentView({modal,d,branch,customer,product,openProduct,close}) {
   const lines=doc.items||doc.lines;
   const name=isPo||isGRN?branch(doc.sid).name:customer(doc.cid).name;
   const kind=isPo?"Stock request":isGRN?"Goods received note":isDelivery?"Delivery note":isReturn?"Customer return":"Customer order";
+  const totalQty=lines.reduce((sum,line)=>sum+Number(line.qty||0),0),generated=new Date().toLocaleString("en-LK",{dateStyle:"medium",timeStyle:"short"});
   return <Modal wide title={doc.id} sub={kind+" · "+name} close={close}>
-    <div className="print-sheet">
-      <div className="print-sheet-heading"><strong>StockEasy · Supun Group</strong><State value={doc.status}/></div>
-      <div className="summary-grid"><div><span>Document</span><strong>{doc.id}</strong></div><div><span>{isPo?"Supplier":"Customer company"}</span><strong>{name}</strong></div>
-        <div><span>Date</span><strong>{today(doc.date)}</strong></div></div>
+    <div className="print-sheet print-document">
+      <header className="print-document-header"><div className="print-company"><img src="/logo.png" alt="Supun Group of Companies"/><div><strong>SUPUN GROUP OF COMPANIES</strong><span>StockEasy Inventory &amp; Stock Management System</span></div></div><div className="print-document-identity"><small>{kind}</small><h1>{doc.id}</h1><State value={doc.status}/></div></header>
+      <div className="print-accent-line"/>
+      <section className="print-document-meta"><div><span>Document date</span><strong>{today(doc.date)}</strong></div><div><span>{isPo||isGRN?"Supplier / Branch":"Customer company"}</span><strong>{name}</strong></div><div><span>Total items</span><strong>{lines.length}</strong></div><div><span>Total quantity</span><strong>{totalQty}</strong></div></section>
+      <div className="print-section-title"><span>Line items</span><small>Quantities recorded in this document</small></div>
       {isPo?<div className="po-detail-table"><div className="po-detail-row po-detail-head"><strong>Item</strong><strong>Ordered</strong><strong>Received</strong><strong>Remaining</strong><strong>Unit cost</strong><strong>Amount</strong></div>
         {lines.map(l=><div className="po-detail-row" key={l.pid}><button className="product-link" onClick={()=>openProduct(l.pid)}><strong>{product(l.pid).name}</strong><small>{product(l.pid).sku||"No item code"}</small></button><span>{l.qty} {product(l.pid).unit}</span><span>{l.received||0}</span><span>{l.qty-(l.received||0)}</span><span>{rs(l.cost)}</span><strong>{rs(l.qty*l.cost)}</strong></div>)}</div>:
         isOrder?<div className="po-detail-table"><div className="po-detail-row po-detail-head"><strong>Item</strong><strong>Ordered</strong><strong>Sent</strong><strong>Remaining</strong><strong>Unit price</strong><strong>Amount</strong></div>
@@ -886,7 +888,9 @@ function DocumentView({modal,d,branch,customer,product,openProduct,close}) {
         <div className={"document-table" + (!hasPrices ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{hasPrices&&<strong>Amount</strong>}</div>
           {lines.map(l=><div className="document-table-row" key={l.pid}><button className="product-link simple" onClick={()=>openProduct(l.pid)}>{product(l.pid).name}</button><span>{l.qty} {product(l.pid).unit}</span>{hasPrices&&<span>{rs(l.qty*l.price)}</span>}</div>)}</div>}
       {hasPrices&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
-      {doc.note&&<p className="mute">Notes: {doc.note}</p>}
+      {doc.note&&<section className="print-notes"><strong>Notes</strong><p>{doc.note}</p></section>}
+      <section className="print-approval"><div><span>Prepared by</span><strong>{doc.by||"________________________"}</strong><small>Signature</small></div><div><span>Checked by</span><strong>________________________</strong><small>Signature</small></div><div><span>Received / Approved by</span><strong>________________________</strong><small>Signature</small></div></section>
+      <footer className="print-document-footer"><div><strong>StockEasy</strong><span>Supun Group of Companies</span></div><div><span>Generated {generated}</span><small>Computer-generated document</small></div></footer>
     </div>
     <div className="form-actions print-actions"><button className="btn" onClick={()=>window.print()}><Printer size={17}/> Print document</button>
       <button className="btn ghost" onClick={close}>Close</button></div>
