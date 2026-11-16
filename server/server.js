@@ -69,7 +69,8 @@ const cleanPermissions = (value, role = "staff") => {
   let source = value;
   if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
   const fallback = defaultPermissions(role);
-  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
+  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "quotations" && ["none","view","edit"].includes(source?.customer_orders)
+    ? source.customer_orders : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
 };
 const publicUser = user => ({ id:user.id, username:user.username, role:user.role, permissions:cleanPermissions(user.permissions,user.role) });
 app.post("/api/login", (req, res) => {
