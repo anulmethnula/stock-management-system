@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { QuotationPage, QuotationForm, QuotationView, QuotationDecision, QuotationConvert } from "./QuotationUI.jsx";
 import {
   LayoutDashboard, Package, Building2, Users, ClipboardList, PackageCheck,
   Truck, History, Shield, LogOut, Plus, Pencil, Trash2,
   Search, AlertTriangle, ArrowRight, Check, X, Camera, Minus,
   RotateCcw, Printer, Eye, Archive, ArrowUpRight, ArrowDownLeft,
   LockKeyhole, ShoppingBag, Boxes, Info, RefreshCw, Download, Upload, BarChart3, ExternalLink,
-  MapPin, Phone, UserRound, ChevronLeft, ChevronRight
+  MapPin, Phone, UserRound, ChevronLeft, ChevronRight, FileText
 } from "lucide-react";
 
 const request = async (path, method = "GET", body) => {
@@ -25,15 +26,15 @@ const isClosed = s => ["Received", "Cancelled", "Part cancelled", "Dispatched", 
 const active = arr => arr.filter(x => x.active);
 const number = value => Number(value) || 0;
 const Icons = { home: LayoutDashboard, products: Package, branches: Building2, customers: Users,
-  pos: ClipboardList, grns: PackageCheck, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
+  pos: ClipboardList, grns: PackageCheck, quotes: FileText, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
 const MENU = [
   ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
   ["customers", "Customers"], ["pos", "Stock requests"], ["grns", "Goods received"],
-  ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
+  ["quotes", "Quotations"], ["orders", "Customer orders"], ["deliveries", "Deliveries"], ["history", "Stock history"], ["reports", "Reports"], ["staff", "Staff"]
 ];
 const PRODUCT_CATEGORIES = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
-const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
-const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
+const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",quotes:"quotations",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
+const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["quotations","Customer quotations"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
 const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="viewer"?"view":"edit"]));
 const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||(feature==="staff"?"none":user?.role==="viewer"?"view":"edit");
 
@@ -186,6 +187,7 @@ export default function App() {
         {page === "products" && <Products {...ctx} />}
         {page === "pos" && <PurchaseOrders {...ctx} />}
         {page === "grns" && <GoodsReceived {...ctx} />}
+        {page === "quotes" && <QuotationPage {...ctx} />}
         {page === "orders" && <CustomerOrders {...ctx} />}
         {page === "deliveries" && <Deliveries {...ctx} />}
         {page === "history" && <StockHistory {...ctx} />}
@@ -607,6 +609,10 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
   if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d}/>;
   if(modal.type==="po") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="po"/>;
+  if(modal.type==="quotation") return <QuotationForm record={modal.record} d={d} close={close} busy={busy} action={action}/>;
+  if(modal.type==="view-quotation") return <QuotationView record={modal.record} d={d} close={close}/>;
+  if(modal.type==="quotation-decision") return <QuotationDecision record={modal.record} status={modal.status} close={close} busy={busy} action={action}/>;
+  if(modal.type==="quotation-convert") return <QuotationConvert record={modal.record} close={close} busy={busy} action={action}/>;
   if(modal.type==="order") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="order"/>;
   if(modal.type==="grn") return <MovementForm title="Receive goods (GRN)" type="grn" doc={modal.po} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="dispatch") return <MovementForm title="Send goods to customer" type="dispatch" doc={modal.order} d={d} close={close} busy={busy} action={action}/>;
