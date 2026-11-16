@@ -536,15 +536,15 @@ function StockHistory({d,product,user,setModal}) {
 
 const REPORT_TYPES = [
   ["stock","Stock Summary Report",Package],["po","Stock Requests (PO) Report",ClipboardList],["grn","Goods Received (GRN) Report",PackageCheck],["orders","Customer Orders Report",ShoppingBag],
-  ["delivery","Deliveries & Returns Report",Truck],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
+  ["quotations","Customer Quotations Report",FileText],["delivery","Deliveries & Returns Report",Truck],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
 ];
 function Reports({d,branch,customer,product}) {
   const emptyFilters={from:"",to:"",sid:"all",cid:"all",pid:"all",status:"all"};
   const [type,setType]=useState("stock"),[filters,setFilters]=useState(emptyFilters),[report,setReport]=useState(null);
   const setFilter=(key,value)=>setFilters(o=>({...o,[key]:value})),config=REPORT_TYPES.find(x=>x[0]===type);
-  const usesDate=["po","grn","orders","delivery","movement"].includes(type),usesSupplier=["stock","po","grn","suppliers"].includes(type),usesCustomer=["orders","delivery","customers"].includes(type),usesItem=["stock","po","grn","orders","delivery","movement"].includes(type),usesStatus=!['suppliers','customers'].includes(type);
+  const usesDate=["po","grn","orders","quotations","delivery","movement"].includes(type),usesSupplier=["stock","po","grn","suppliers"].includes(type),usesCustomer=["orders","quotations","delivery","customers"].includes(type),usesItem=["stock","po","grn","orders","quotations","delivery","movement"].includes(type),usesStatus=!['suppliers','customers'].includes(type);
   const movementGroup=t=>/reversed/i.test(t)?"Reversal":/goods received/i.test(t)?"GRN":/customer return/i.test(t)?"Return":/deliver/i.test(t)?"Delivery":"Adjustment";
-  const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),delivery:[["Delivery","Delivery"],["Return","Return"],["Active","Active"],["Reversed","Reversed"]],movement:["GRN","Delivery","Return","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
+  const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),quotations:[...new Set(d.quotations.map(x=>x.status))].map(x=>[x,x]),delivery:[["Delivery","Delivery"],["Return","Return"],["Active","Active"],["Reversed","Reversed"]],movement:["GRN","Delivery","Return","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
   const dateOk=date=>(!filters.from||String(date).slice(0,10)>=filters.from)&&(!filters.to||String(date).slice(0,10)<=filters.to),hasItem=lines=>filters.pid==="all"||lines.some(l=>l.pid===Number(filters.pid)),selectedLines=lines=>lines.filter(l=>filters.pid==="all"||l.pid===Number(filters.pid)),sumQty=lines=>selectedLines(lines).reduce((n,l)=>n+l.qty,0);
   const build=()=>{
     let columns=[],rows=[],summary=[];
@@ -555,6 +555,13 @@ function Reports({d,branch,customer,product}) {
       const docs=d.pos.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["PO","Date","Supplier","Items","Requested","Received","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),r=lines.reduce((n,l)=>n+l.received,0);return[x.id,today(x.date),branch(x.sid).name,lines.map(l=>product(l.pid).name).join(", "),q,r,q-r,x.status]});summary=[["Requests",docs.length],["Requested",rows.reduce((n,r)=>n+Number(r[4]),0)],["Received",rows.reduce((n,r)=>n+Number(r[5]),0)]];
     } else if(type==="grn"){
       const docs=d.grns.filter(x=>dateOk(x.date)&&(filters.sid==="all"||x.sid===Number(filters.sid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["GRN","Date","PO","Supplier","Items","Quantity","Received By","Status"];rows=docs.map(x=>[x.id,today(x.date),x.poId,branch(x.sid).name,selectedLines(x.lines).map(l=>product(l.pid).name).join(", "),sumQty(x.lines),x.by,x.status]);summary=[["GRNs",docs.length],["Units received",rows.reduce((n,r)=>n+Number(r[5]),0)],["Active",docs.filter(x=>x.status==="Active").length]];
+    } else if(type==="quotations"){
+      const docs=d.quotations.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));
+      columns=["Quotation","Date","Customer","Items","Quantity","Total (Rs)","Valid Until","Status","Customer Order"];
+      rows=docs.map(x=>{const lines=selectedLines(x.items),qty=lines.reduce((n,l)=>n+l.qty,0),value=lines.reduce((n,l)=>n+l.qty*l.price,0);
+        const linked=d.orders.find(o=>o.n===x.convertedN);
+        return [x.id,today(x.date),x.customerName,lines.map(l=>l.name).join(", "),qty,value.toFixed(2),x.validUntil,x.status,linked?.id||"—"];});
+      summary=[["Quotations",docs.length],["Total quoted (Rs)",rows.reduce((n,r)=>n+Number(r[5]),0).toFixed(2)],["Converted",docs.filter(x=>x.status==="Converted").length]];
     } else if(type==="orders"){
       const docs=d.orders.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.items)&&(filters.status==="all"||x.status===filters.status));columns=["Order","Date","Customer","Items","Ordered","Dispatched","Remaining","Status"];rows=docs.map(x=>{const lines=selectedLines(x.items),q=lines.reduce((n,l)=>n+l.qty,0),sent=lines.reduce((n,l)=>n+l.dispatched,0);return[x.id,today(x.date),customer(x.cid).name,lines.map(l=>product(l.pid).name).join(", "),q,sent,q-sent,x.status]});summary=[["Orders",docs.length],["Ordered",rows.reduce((n,r)=>n+Number(r[4]),0)],["Dispatched",rows.reduce((n,r)=>n+Number(r[5]),0)]];
     } else if(type==="delivery"){
