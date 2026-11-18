@@ -69,3 +69,14 @@ Use a local database or a separate test environment for development and testing.
 - Unused factory demo categories are archived automatically; categories still assigned to items are retained.
 - For **future supplier purchases**, use **PO → GRN**, not Items bulk upload. GRN adds goods, while inventory bulk upload sets a final physical count.
 - Back up the database and verify the Excel's quantities before your first real migration.
+
+
+## Purchase Order (PO) Excel bulk request
+
+- Use **Stock Requests → Create Purchase Order → Download latest PO template** after migrating or updating the Items catalogue. The downloaded workbook is generated from active products with their real Product ID, Item Code, Item Name, Category, Usual Supplier, Unit, Available Stock and Unit Cost.
+- Purchase template columns: **Product ID | Item Code | Item Name | Category | Usual Supplier | Unit | Available Stock | Order Quantity | Unit Cost (Rs) | Total Cost (Rs)**.
+- Choose the actual PO supplier in the StockEasy form. **Usual Supplier in Excel is for reference only**: a PO can request an item from a different branch.
+- Enter new requested quantities in **column H**. Leave items you are not ordering blank. Review or change **Unit Cost (column I)**; Total Cost (column J) calculates automatically. Excel includes bordered rows, quantity/price validation and a How to Fill guide.
+- Upload the sheet and review items before saving. Uploading does not create a PO until Save, and saving a PO **never changes current stock**. Stock increases only when actual GRN receipt is saved.
+- Do not upload the 11-column Inventory Migration file into the PO importer; that file sets absolute physical stock counts and is handled under Items.
+- PO import checks IDs, item codes and product details, rejects repeated products/invalid amounts, and supports at most **200 distinct items** per PO. If the catalogue changes, download a fresh PO template.
