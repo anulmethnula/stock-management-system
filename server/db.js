@@ -69,9 +69,8 @@ db.transaction(() => {
   const migration="category-defaults-v1";
   const insert=db.prepare("INSERT OR IGNORE INTO product_categories(name) VALUES(?)");
   if (!db.prepare("SELECT 1 FROM schema_migrations WHERE name=?").get(migration)) {
-    if (!db.prepare("SELECT 1 FROM product_categories LIMIT 1").get()) {
-      ["Helmets","Electrical","Safety gear","Raw materials","Packaging","Tools","Other"].forEach(name=>insert.run(name));
-    }
+    // Categories are user-managed or imported from Excel, not factory demo defaults.
+    // On existing installs, previously assigned categories are retained below.
     db.prepare("INSERT INTO schema_migrations(name) VALUES(?)").run(migration);
   }
   db.prepare("SELECT DISTINCT TRIM(category) name FROM products WHERE TRIM(COALESCE(category,''))<>''").all().forEach(row=>insert.run(row.name));
