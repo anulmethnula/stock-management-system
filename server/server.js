@@ -69,10 +69,11 @@ const cleanPermissions = (value, role = "staff") => {
   let source = value;
   if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
   const fallback = defaultPermissions(role);
+  const custom=source&&Object.keys(source).length>0;
   return Object.fromEntries(FEATURES.map(feature => {
     let level=feature==="staff"?"none": ["none","view","edit"].includes(source?.[feature])?source[feature]:
       feature==="quotations"&&["none","view","edit"].includes(source?.customer_orders)?source.customer_orders:
-      feature==="stock_adjustments"||feature==="reports"&&role==="staff"?"none":fallback[feature];
+      feature==="stock_adjustments"||feature==="reports"&&role==="staff"||custom?"none":fallback[feature];
     if(role==="viewer"&&level==="edit")level=feature==="stock_adjustments"?"none":"view";
     return [feature,level];
   }));
