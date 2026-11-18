@@ -924,11 +924,11 @@ function SupplierReturnForm({grn,d,close,busy,action}) {
     </form></Modal>;
 }
 function InventoryBulkForm({d,close,action,busy}) {
-  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false);
+  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false),[showUnchanged,setShowUnchanged]=useState(false);
   const upload=async e=>{
     const file=e.target.files?.[0];e.target.value="";
     if(!file)return;
-    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);
+    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);setShowUnchanged(false);
     if(!file.name.toLowerCase().endsWith(".xlsx")){setError("Choose an Excel .xlsx file.");return;}
     if(file.size>4*1024*1024){setError("Excel file must be smaller than 4 MB.");return;}
     setUploading(true);
@@ -940,6 +940,7 @@ function InventoryBulkForm({d,close,action,busy}) {
     }catch(err){setError(err.message);}finally{setUploading(false);}
   };
   const changes=preview?.rows?.filter(x=>x.action!=="unchanged")||[];
+  const reviewRows=showUnchanged?preview?.rows||[]:changes;
   const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading;
   return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
     <div className="notice"><Info size={18}/> Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</div>
@@ -951,7 +952,7 @@ function InventoryBulkForm({d,close,action,busy}) {
           <input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={uploading||busy} onChange={upload}/>
         </label>
       </div>
-      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet.</p>
+      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are NOT deleted.</p>
       {fileName&&<small>Selected: <strong>{fileName}</strong></small>}
     </div>
     {error&&<div className="error-banner" role="alert"><AlertTriangle size={17}/><span>{error}</span></div>}
@@ -961,18 +962,18 @@ function InventoryBulkForm({d,close,action,busy}) {
       </div>
       {!!preview.summary.categories.length&&<div className="notice"><Info size={16}/><span>New categories from Excel: <strong>{preview.summary.categories.join(", ")}</strong></span></div>}
       {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>Fix these problems and upload again:</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}</div>}
-      <p className="mute" style={{margin:"12px 0"}}><strong>Review every change before saving.</strong> Current Stock → Excel Final Stock. No PO or GRN will be created.</p>
+      <p className="mute" style={{margin:"12px 0"}}><strong>Review every change before saving.</strong> Current Stock → Excel Final Stock. No PO or GRN will be created. {preview.summary.unchangedCount>0&&<button type="button" className="text-button" onClick={()=>setShowUnchanged(v=>!v)}>{showUnchanged?"Hide":"Show"} {preview.summary.unchangedCount} unchanged item(s)</button>}</p>
       <div className="report-table-wrap" style={{maxHeight:330,overflow:"auto",border:"1px solid #dce6df",borderRadius:10}}>
         <table><thead><tr>{["Excel Row","Action","Item / Code","Category","Supplier","Current","Final","Difference","Cost","Selling"].map(x=><th key={x}>{x}</th>)}</tr></thead>
-          <tbody>{(preview.rows||[]).slice(0,200).map(x=><tr key={x.row}>
+          <tbody>{reviewRows.map(x=><tr key={x.row}>
             <td>{x.row}</td><td><strong>{x.action==="new"?"Create":x.action==="update"?"Update":"Unchanged"}</strong></td>
-            <td><strong>{x.name}</strong><small style={{display:"block"}}>{x.sku||"—"}</small></td><td>{x.category}</td><td>{x.supplier}</td>
+            <td><strong>{x.name}</strong>{x.oldName&&x.oldName!==x.name&&<small style={{display:"block"}}>Was: {x.oldName}</small>}<small style={{display:"block"}}>{x.sku||"—"}</small></td><td>{x.category}{x.oldCategory&&x.oldCategory!==x.category&&<small style={{display:"block"}}>Was: {x.oldCategory}</small>}</td><td>{x.supplier}</td>
             <td>{x.oldStock===null?"New":x.oldStock}</td><td><strong>{x.qty}</strong></td>
-            <td>{x.delta>0?"+":""}{x.delta}</td><td>{rs(x.cost)}</td><td>{rs(x.sell)}</td>
+            <td>{x.delta>0?"+":""}{x.delta}</td><td>{rs(x.cost)}{x.oldCost!==null&&x.oldCost!==x.cost&&<small style={{display:"block"}}>Was: {rs(x.oldCost)}</small>}</td><td>{rs(x.sell)}{x.oldSell!==null&&x.oldSell!==x.sell&&<small style={{display:"block"}}>Was: {rs(x.oldSell)}</small>}</td>
           </tr>)}</tbody>
         </table>
       </div>
-      {preview.rows.length>200&&<p className="mute">Showing first 200 of {preview.rows.length} rows. All rows will be imported after confirmation.</p>}
+
       <p className="mute" style={{marginTop:10}}>Net stock adjustment: <strong>{preview.summary.stockDelta>0?"+":""}{preview.summary.stockDelta}</strong> units across all items.</p>
       <label className="checkline" style={{marginTop:14}}>
         <input type="checkbox" checked={confirmed} disabled={!preview.canCommit} onChange={e=>setConfirmed(e.target.checked)}/>
