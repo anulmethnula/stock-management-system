@@ -107,6 +107,14 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.canCommit,false);
     assert.match(twice.errors.join(" "),/already been imported|already match/);
+    // A later physical recount may legitimately use the same target quantities
+    // after another transaction changed the real stock. Preview must show a delta.
+    await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
+    const recount=await previewExcel(inventoryFile);
+    assert.equal(recount.canCommit,true);
+    assert.equal(recount.summary.stockDelta,-2);
+    await api("/inventory-import/commit","POST",{token:recount.token,confirm:true});
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,12);
     await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
     const changedFile=buildInventoryTemplate([{
       id:bulkItem.id,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
