@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { buildPOTemplate } from "../server/po-excel.js";
 
 async function unusedPort() {
@@ -177,13 +178,34 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/customer-orders/" + co2n + "/dispatch", "POST", { lines: [{ pid, qty: 11 }] }, 409);
     assert.equal((await snapshot()).products.find(x => x.id === pid).stock, 5);
 
-    await api("/returns", "POST", { deliveryN: dN1, lines: [{ pid, qty: 2 }], note: "Wrong packaging" });
+    await api("/returns", "POST", { deliveryN: dN1, lines: [{ pid, qty: 2, condition:"sellable" }], note: "Wrong packaging" });
     snap = await snapshot();
     assert.equal(snap.products.find(x => x.id === pid).stock, 7);
     await api("/returns", "POST", { deliveryN: dN1, lines: [{ pid, qty: 9 }], note: "Too many" }, 409);
     await api("/deliveries/" + dN1 + "/reverse", "POST", { reason: "Wrong delivery" }, 409);
     await api("/returns/" + snap.returns[0].n + "/reverse", "POST", { reason: "Corrected return" });
     assert.equal((await snapshot()).products.find(x => x.id === pid).stock, 5);
+    // Damaged and uninspected items never increase dispatchable stock.
+    await api("/returns","POST",{deliveryN:dN1,lines:[{pid,qty:1}],note:"Condition missing"},400);
+    const damaged=await idOf("/returns","code",{deliveryN:dN1,lines:[{pid,qty:3,condition:"quarantine"}],note:"Broken items"});
+    snap=await snapshot();
+    assert.equal(snap.products.find(x=>x.id===pid).stock,5);
+    assert.equal(snap.products.find(x=>x.id===pid).damagedStock,3);
+    assert.equal(snap.returns.find(x=>x.id===damaged).lines[0].condition,"quarantine");
+    await api("/customer-orders/"+co2n+"/dispatch","POST",{lines:[{pid,qty:6}]},409);
+    await api("/returns/"+snap.returns.find(x=>x.id===damaged).n+"/reverse","POST",{reason:"Return counting mistake"});
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).damagedStock,0);
+    await api("/returns","POST",{deliveryN:dN1,lines:[{pid,qty:3,condition:"quarantine"}],note:"Damaged items"});
+    await api("/quarantine","POST",{pid,mode:"release",qty:1,reason:"Passed inspection"});
+    await api("/quarantine","POST",{pid,mode:"dispose",qty:2,reason:"Scrapped after inspection"});
+    await api("/quarantine","POST",{pid,mode:"release",qty:1,reason:"Nothing left"},409);
+    snap=await snapshot();
+    assert.equal(snap.products.find(x=>x.id===pid).stock,6);
+    assert.equal(snap.products.find(x=>x.id===pid).damagedStock,0);
+    await api("/quarantine","POST",{pid,mode:"hold",qty:1,reason:"Damage found in warehouse"});
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).stock,5);
+    await api("/quarantine","POST",{pid,mode:"dispose",qty:1,reason:"Scrapped"});
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).damagedStock,0);
     await api("/deliveries/" + dN2 + "/reverse", "POST", { reason: "Delivery was cancelled" });
     assert.equal((await snapshot()).products.find(x => x.id === pid).stock, 10);
     await api("/grns/" + secondGrn + "/reverse", "POST", { reason: "Wrong receipt quantity" });
@@ -217,9 +239,22 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/branches", "POST", { name:"Forbidden supplier" }, 403, restrictedCookie);
     await api("/po-template", "GET", undefined, 403, restrictedCookie);
     await api("/po-import", "POST", {}, 403, restrictedCookie);
+    await api("/stock-history","GET",undefined,403,restrictedCookie);
+    await api("/adjustments","POST",{pid,change:1,reason:"Unauthorized"},403,restrictedCookie);
     await api("/staff/" + restrictedId, "DELETE");
+    const inventoryEditor=await idOf("/staff","id",{username:"inventory-editor",password:"InventoryPassword#123",role:"staff",permissions:{products:"edit",dashboard:"view"}});
+    const editorLogin=await api("/login","POST",{username:"inventory-editor",password:"InventoryPassword#123"});
+    const editorCookie=editorLogin.response.headers.get("set-cookie")?.split(";")[0];
+    await api("/adjustments","POST",{pid,change:1,reason:"Unauthorized"},403,editorCookie);
+    await api("/quarantine","POST",{pid,mode:"hold",qty:1,reason:"Unauthorized"},403,editorCookie);
+    await api("/products","POST",{name:"Unauthorized stock",sid:a,category:"Packaging",unit:"pieces",cost:0,stock:1},403,editorCookie);
+    const editorData=(await api("/all","GET",undefined,200,editorCookie)).data;
+    assert.ok(editorData.dashboardCounts);
+    assert.equal(editorData.movements.length,0);
+    assert.ok(editorData.dashboardChart.length>0);
+    await api("/staff/"+inventoryEditor,"DELETE");
 
-    const viewerId = await idOf("/staff", "id", { username: "viewer", password: "ViewerPassword#123", role: "viewer" });
+    const viewerId = await idOf("/staff", "id", { username: "viewer", password: "ViewerPassword#123", role: "viewer",permissions:{suppliers:"edit",stock_adjustments:"edit",stock_history:"view"} });
     const viewerLogin = await api("/login", "POST", { username: "viewer", password: "ViewerPassword#123" });
     const viewerCookie = viewerLogin.response.headers.get("set-cookie")?.split(";")[0];
     await api("/all", "GET", undefined, 200, viewerCookie);
@@ -229,6 +264,28 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/customers/" + cid, "DELETE");
     assert.equal((await snapshot()).customers.find(x => x.id === cid).active, 0);
 
+    // Full paginated history and Colombo midnight boundary (UTC+05:30).
+    const auditDb=new DatabaseSync(path.join(temp,"test.sqlite"));
+    try {
+      const ins=auditDb.prepare("INSERT INTO stock_movements(product_id,qty_change,event_type,reference,created_at) VALUES(?,0,'Stock correction',?,?)");
+      auditDb.exec("BEGIN IMMEDIATE");
+      ins.run(pid,"MIDNIGHT_BEFORE","2025-01-31 18:29:59");
+      ins.run(pid,"MIDNIGHT_AFTER","2025-01-31 18:30:00");
+      for(let i=0;i<1010;i++)ins.run(pid,"PAGING-"+i,"2025-02-01 00:00:00");
+      auditDb.exec("COMMIT");
+      const day=(await api("/stock-history?from=2025-02-01&to=2025-02-01&pid="+pid)).data;
+      assert.equal(day.totals.records,1011);
+      assert.equal(day.rows.length,10);
+      const last=(await api("/stock-history?from=2025-02-01&to=2025-02-01&pid="+pid+"&page=102")).data;
+      assert.equal(last.rows[0].reference,"MIDNIGHT_AFTER");
+      assert.match(last.rows[0].at,/^2025-02-01 00:00:00/);
+      const prior=(await api("/stock-history?from=2025-01-31&to=2025-01-31&pid="+pid)).data;
+      assert.equal(prior.rows[0].reference,"MIDNIGHT_BEFORE");
+      const full=await snapshot();
+      assert.ok(full.reportMovements.length>1000);
+      assert.equal(full.reportMovements.filter(x=>x.pid===pid).reduce((n,x)=>n+x.qty,0),full.products.find(x=>x.id===pid).stock);
+      assert.equal(full.reportMovements.filter(x=>x.pid===pid).reduce((n,x)=>n+x.damagedQty,0),full.products.find(x=>x.id===pid).damagedStock);
+    } finally {auditDb.close();}
     // Order cancellation still keeps historical documents.
     await api("/customer-orders/" + co2n, "DELETE");
     assert.equal((await snapshot()).orders.find(x => x.n === co2n).status, "Cancelled");
