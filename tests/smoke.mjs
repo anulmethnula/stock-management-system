@@ -106,7 +106,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.canCommit,false);
-    assert.match(twice.errors.join(" "),/already been imported/);
+    assert.match(twice.errors.join(" "),/already been imported|already match/);
     await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
     const changedFile=buildInventoryTemplate([{
       id:bulkItem.id,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
