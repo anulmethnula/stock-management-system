@@ -10,5 +10,7 @@ database/*.db-wal
 *.log
 *.zip
 .stockeasy-deploy-stage/
+.stockeasy-deploy-stage-clean/
+database/backups/
 
 # Note: already-tracked files stay tracked until explicitly removed with git rm --cached.

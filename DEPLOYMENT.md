@@ -2,7 +2,7 @@
 
 Target URL: `https://stock.supuncompanies.com`
 
-The deployment ZIP is intentionally clean. It contains no local database, passwords, Git files, tests, or `node_modules`. On the first start, StockEasy creates a new database from `database/schema.sql`.
+The deployment ZIP contains a cleaned `database/stockeasy.db`: it keeps the existing active `admin` login and default categories, but contains no suppliers, products, customers, documents, stock, or history records. It contains no plain-text passwords, Git files, tests, or `node_modules`.
 
 ## 1. DNS
 
@@ -17,9 +17,10 @@ cd /var/www/stockeasy
 npm ci --omit=dev
 sudo mkdir -p /var/lib/stockeasy
 sudo chown -R "$USER":"$USER" /var/lib/stockeasy
+cp database/stockeasy.db /var/lib/stockeasy/stockeasy.db
 ```
 
-Copy `deployment.env.example` to `.env`, replace the example admin password with a long random password, and load those variables through the hosting panel or process manager. Never upload the completed `.env` publicly.
+Copy `deployment.env.example` to `.env` and load those variables through the hosting panel or process manager. The included database already has the preserved administrator login, so the first-start admin variables are not used unless that database is removed. Never upload the completed `.env` publicly.
 
 ## 3. Start with PM2
 
@@ -53,7 +54,7 @@ sudo certbot --nginx -d stock.supuncompanies.com
 
 ## 5. First login and backups
 
-Open `https://stock.supuncompanies.com` and sign in with `STOCKEASY_ADMIN_USER` and `STOCKEASY_ADMIN_PASSWORD`. After the first successful start, remove the plain-text password variable from the process environment if your hosting workflow permits it; only its secure hash is stored in SQLite.
+Open `https://stock.supuncompanies.com` and sign in with the same `admin` username and password used in the local system. Only its secure password hash is stored in the included SQLite database.
 
 Administrators can download a consistent database snapshot from **Staff → Download Backup**. Also back up `/var/lib/stockeasy/stockeasy.db` regularly.
 
