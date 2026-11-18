@@ -283,6 +283,13 @@ app.put("/api/categories/:id",requireEdit("products"),run(req=>transaction(()=>{
   if(name!==current.name)db.prepare("UPDATE products SET category=? WHERE category=? COLLATE NOCASE").run(name,current.name);
   return {id,name,active};
 })));
+app.delete("/api/categories/:id",requireEdit("products"),run(req=>transaction(()=>{
+  const id=ident(req.params.id),current=db.prepare("SELECT * FROM product_categories WHERE id=?").get(id);
+  check(current,"Category not found.",404);
+  check(!db.prepare("SELECT 1 FROM products WHERE category=? COLLATE NOCASE LIMIT 1").get(current.name),"Reassign items in this category before deleting it.",409);
+  db.prepare("DELETE FROM product_categories WHERE id=?").run(id);
+  return {deleted:true};
+})));
 
 function poPayload(b) {
   const sid = ident(b.sid);
