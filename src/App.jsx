@@ -372,8 +372,11 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
   const actions=p=><div className="inventory-actions">{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
   const status=p=>!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low stock":"Out of stock"}</Pill>;
   return <div className="inventory-page">
-    <SectionHeading title="Factory inventory" sub="Helmets, electrical components, safety equipment and manufacturing materials." action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
-    {canEdit&&<div className="inventory-secondary-actions"><button className="btn ghost sm" type="button" onClick={()=>setModal({type:"categories"})}><Pencil size={15}/> Manage Categories</button></div>}
+    <SectionHeading title="Inventory items" sub="Manage current stock, item details and bulk Excel updates." action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
+    {canEdit&&<div className="inventory-secondary-actions">
+      <button className="btn ghost sm" type="button" onClick={()=>setModal({type:"categories"})}><Pencil size={15}/> Manage Categories</button>
+      {accessLevel(user,"stock_adjustments")==="edit"&&<button className="btn sm" type="button" onClick={()=>setModal({type:"inventory-bulk"})}><Upload size={15}/> Bulk Upload Excel</button>}
+    </div>}
     <div className="inventory-summary">{[[Package,"Total items",counts.total,"all","green"],[Check,"In stock",counts.ok,"ok","blue"],[AlertTriangle,"Low stock",counts.low,"low","amber"],[X,"Out of stock",counts.out,"out","red"]].map(([Icon,label,value,key,tone])=><button key={key} className={`inventory-summary-card ${tone} ${stockFilter===key?"on":""}`} onClick={()=>setStockFilter(key)}><span><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></button>)}</div>
     <div className="inventory-tools"><SearchBox value={q} change={setQ} placeholder="Search item name, code, category or supplier..."/><select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select><select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label><div className="inventory-view-toggle" role="group" aria-label="Inventory view"><button className={view==="grid"?"on":""} onClick={()=>setView("grid")} title="Grid view"><Boxes size={17}/></button><button className={view==="table"?"on":""} onClick={()=>setView("table")} title="Table view"><ClipboardList size={17}/></button></div></div>
     {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>{p.sku||"No item code"}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Available stock</b><strong>{p.stock}</strong>{p.damagedStock>0&&<small>{p.damagedStock} quarantined</small>}</span><span><b>Prices</b>{rs(p.cost)} / {rs(p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>{status(p)}{actions(p)}</div>)}</div>}
@@ -633,14 +636,15 @@ function Staff({ staff,user,setModal,confirm,action }) {
 }
 
 function Dialog({ modal, ctx, staff, close }) {
-  const {d,branch,customer,product,action,busy,user,openProduct,refresh}=ctx;
+  const {d,branch,customer,product,action,busy,user,openProduct,refresh,setModal}=ctx;
   if(modal.type==="confirm") return <Modal title={modal.title} sub={modal.text} close={close}>
     <div className="notice"><Info size={20}/> Historical records are kept for stock accuracy.</div>
     <div className="form-actions"><button className="btn" disabled={busy} onClick={modal.execute}>Yes, continue</button>
       <button className="btn ghost" onClick={close}>Keep it</button></div></Modal>;
   if(modal.type==="reason") return <ReasonDialog modal={modal} busy={busy} close={close}/>;
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
-  if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d} refresh={refresh} user={user}/>;
+  if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d} refresh={refresh} user={user} openBulk={()=>setModal({type:"inventory-bulk"})}/>;
+  if(modal.type==="inventory-bulk") return <InventoryBulkForm d={d} close={close} action={action} busy={busy}/>;
   if(modal.type==="categories") return <CategoryManager d={d} close={close} refresh={refresh}/>;
   if(modal.type==="po") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="po"/>;
   if(modal.type==="quotation") return <QuotationForm record={modal.record} d={d} close={close} busy={busy} action={action}/>;
@@ -708,10 +712,10 @@ function DirectoryForm({modal,close,busy,action}) {
     </form>
   </Modal>;
 }
-function ProductForm({modal,close,busy,action,d,refresh,user}) {
+function ProductForm({modal,close,busy,action,d,refresh,user,openBulk}) {
   const p=modal.record,branches=active(d.branches);
   const categories=d.categories||[];
-  const defaultCategory=categories.find(c=>c.active&&c.name==="Helmets")?.name||categories.find(c=>c.active)?.name||p?.category||"Other";
+  const defaultCategory=p?.category||categories.find(c=>c.active)?.name||"";
   const [f,setF]=useState(()=>p?{...p}:{name:"",sku:"",category:defaultCategory,emoji:"📦",img:null,sid:branches[0]?.id||"",unit:"units",cost:0,sell:0,stock:0,reorder:5,active:1});
   const [categoryOpen,setCategoryOpen]=useState(false),[categoryName,setCategoryName]=useState(""),[categoryBusy,setCategoryBusy]=useState(false),[categoryError,setCategoryError]=useState("");
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
@@ -730,9 +734,9 @@ function ProductForm({modal,close,busy,action,d,refresh,user}) {
   };
   return <Modal title={p?"Edit item":"Add new item"} sub="Pictures and simple names help staff find items quickly." close={close}>
     <form onSubmit={e=>{e.preventDefault();action("/products"+(p?"/"+p.id:""),p?"PUT":"POST",f,"Item saved.");}}>
-      <label>Item name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: Safety helmet shell"/>
+      <label>Item name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: CAMY Air Conditioner"/>
       <label>Item code (optional)</label><input value={f.sku||""} onChange={e=>set("sku",e.target.value)} placeholder="ITEM-001"/>
-      <label>Category *</label><div className="category-field"><select required value={f.category||defaultCategory} onChange={e=>set("category",e.target.value)}>{categories.length?categories.filter(c=>c.active||c.name===f.category).map(c=><option key={c.id} value={c.name}>{c.name}</option>):<option value={f.category||defaultCategory}>{f.category||defaultCategory}</option>}</select><button className="btn ghost sm" type="button" onClick={()=>setCategoryOpen(true)}><Plus size={15}/> Add New Category</button></div>
+      <label>Category *</label><div className="category-field"><select required value={f.category} onChange={e=>set("category",e.target.value)}><option value="">Choose a category</option>{categories.filter(c=>c.active||c.name===f.category).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select><button className="btn ghost sm" type="button" onClick={()=>setCategoryOpen(true)}><Plus size={15}/> Add New Category</button></div>
       <label>Picture or icon</label><div className="upload-row"><Picture p={f}/>
         <label className="btn ghost sm file-picker"><Camera size={16}/> Upload photo<input type="file" hidden accept="image/*" onChange={upload}/></label>
         <select aria-label="Choose icon" value={f.emoji} onChange={e=>set("emoji",e.target.value)} className="emoji-picker">
@@ -747,7 +751,8 @@ function ProductForm({modal,close,busy,action,d,refresh,user}) {
         <div><label>Warn when stock reaches</label><input type="number" min="0" step="1" value={f.reorder} onChange={e=>set("reorder",e.target.value)} required/></div></div>
       {p&&<div className="notice"><Info size={18}/> Available stock: <strong>{p.stock}</strong> · Quarantined: <strong>{p.damagedStock||0}</strong>. Use "Correct stock" for changes, so history is saved.</div>}
       {p&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Active item</label>}
-      <Controls busy={busy} close={close} valid={!!f.name.trim()&&!!f.sid} label={p?"Update item":"Add item"}/>
+      <Controls busy={busy} close={close} valid={!!f.name.trim()&&!!f.sid&&!!f.category} label={p?"Update item":"Add item"}/>
+      {accessLevel(user,"stock_adjustments")==="edit"&&<div className="notice" style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Many items? Use your Excel template.</span><button type="button" className="btn ghost sm" onClick={openBulk}><Upload size={15}/> Bulk Upload Excel</button></div>}
     </form>
     {categoryOpen&&<div className="category-mini-over" onMouseDown={e=>{if(e.target===e.currentTarget)setCategoryOpen(false)}}><section className="category-mini-modal" role="dialog" aria-modal="true" aria-label="Add new category"><div className="modal-head"><div><h3>Add new category</h3><p className="mute">Create a reusable inventory category.</p></div><button className="icon-btn" type="button" onClick={()=>setCategoryOpen(false)}><X size={18}/></button></div><form onSubmit={addCategory}><label>Category name *</label><input autoFocus required maxLength="40" value={categoryName} onChange={e=>setCategoryName(e.target.value)} placeholder="Example: Spare parts"/>{categoryError&&<p className="field-error">{categoryError}</p>}<div className="form-actions"><button className="btn" disabled={categoryBusy||!categoryName.trim()}><Check size={16}/>{categoryBusy?"Saving…":"Save Category"}</button><button className="btn ghost" type="button" onClick={()=>setCategoryOpen(false)}>Cancel</button></div></form></section></div>}
   </Modal>;
@@ -918,6 +923,71 @@ function SupplierReturnForm({grn,d,close,busy,action}) {
       <Controls busy={busy} close={close} valid={valid} label="Save GRTN and reduce stock"/>
     </form></Modal>;
 }
+function InventoryBulkForm({d,close,action,busy}) {
+  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false);
+  const upload=async e=>{
+    const file=e.target.files?.[0];e.target.value="";
+    if(!file)return;
+    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);
+    if(!file.name.toLowerCase().endsWith(".xlsx")){setError("Choose an Excel .xlsx file.");return;}
+    if(file.size>4*1024*1024){setError("Excel file must be smaller than 4 MB.");return;}
+    setUploading(true);
+    try{
+      const res=await fetch("/api/inventory-import/preview",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:file});
+      const result=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(result.error||"Could not preview the Excel file.");
+      setPreview(result);
+    }catch(err){setError(err.message);}finally{setUploading(false);}
+  };
+  const changes=preview?.rows?.filter(x=>x.action!=="unchanged")||[];
+  const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading;
+  return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
+    <div className="notice"><Info size={18}/> Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</div>
+    <div className="po-excel" style={{marginTop:16,marginBottom:16}}>
+      <div className="po-excel-steps"><span><b>1</b> Download</span><i>→</i><span><b>2</b> Fill Excel</span><i>→</i><span><b>3</b> Upload & Preview</span><i>→</i><span><b>4</b> Confirm</span></div>
+      <div className="po-excel-actions">
+        <a className="btn ghost sm" href="/api/inventory-template.xlsx" download="StockEasy_Current_Stock_Migration_Bordered.xlsx"><Download size={16}/> Download Current Stock Template</a>
+        <label className={"btn sm"+(uploading?" disabled":"")}><Upload size={16}/>{uploading?"Checking file…":"Upload & Preview Excel"}
+          <input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={uploading||busy} onChange={upload}/>
+        </label>
+      </div>
+      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet.</p>
+      {fileName&&<small>Selected: <strong>{fileName}</strong></small>}
+    </div>
+    {error&&<div className="error-banner" role="alert"><AlertTriangle size={17}/><span>{error}</span></div>}
+    {preview&&<>
+      <div className="inventory-summary" style={{gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",marginBottom:12}}>
+        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
+      </div>
+      {!!preview.summary.categories.length&&<div className="notice"><Info size={16}/><span>New categories from Excel: <strong>{preview.summary.categories.join(", ")}</strong></span></div>}
+      {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>Fix these problems and upload again:</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}</div>}
+      <p className="mute" style={{margin:"12px 0"}}><strong>Review every change before saving.</strong> Current Stock → Excel Final Stock. No PO or GRN will be created.</p>
+      <div className="report-table-wrap" style={{maxHeight:330,overflow:"auto",border:"1px solid #dce6df",borderRadius:10}}>
+        <table><thead><tr>{["Excel Row","Action","Item / Code","Category","Supplier","Current","Final","Difference","Cost","Selling"].map(x=><th key={x}>{x}</th>)}</tr></thead>
+          <tbody>{(preview.rows||[]).slice(0,200).map(x=><tr key={x.row}>
+            <td>{x.row}</td><td><strong>{x.action==="new"?"Create":x.action==="update"?"Update":"Unchanged"}</strong></td>
+            <td><strong>{x.name}</strong><small style={{display:"block"}}>{x.sku||"—"}</small></td><td>{x.category}</td><td>{x.supplier}</td>
+            <td>{x.oldStock===null?"New":x.oldStock}</td><td><strong>{x.qty}</strong></td>
+            <td>{x.delta>0?"+":""}{x.delta}</td><td>{rs(x.cost)}</td><td>{rs(x.sell)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {preview.rows.length>200&&<p className="mute">Showing first 200 of {preview.rows.length} rows. All rows will be imported after confirmation.</p>}
+      <p className="mute" style={{marginTop:10}}>Net stock adjustment: <strong>{preview.summary.stockDelta>0?"+":""}{preview.summary.stockDelta}</strong> units across all items.</p>
+      <label className="checkline" style={{marginTop:14}}>
+        <input type="checkbox" checked={confirmed} disabled={!preview.canCommit} onChange={e=>setConfirmed(e.target.checked)}/>
+        I checked the Excel. These are final physical quantities and I approve updating the inventory.
+      </label>
+    </>}
+    <div className="form-actions">
+      <button type="button" className="btn" disabled={!canSave} onClick={()=>action("/inventory-import/commit","POST",{token:preview.token,confirm:true},"Bulk inventory upload saved. Item details and stock history updated.","products")}>
+        <Check size={16}/>{busy?"Saving…":"Confirm Bulk Upload"}
+      </button>
+      <button className="btn ghost" type="button" onClick={close}>Cancel</button>
+    </div>
+  </Modal>;
+}
+
 function CategoryManager({d,close,refresh}) {
   const categories=(d.categories||[]).filter(c=>c.active);
   const [names,setNames]=useState(()=>Object.fromEntries(categories.map(c=>[c.id,c.name]))),[newName,setNewName]=useState(""),[working,setWorking]=useState(null),[error,setError]=useState("");
