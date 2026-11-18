@@ -43,7 +43,6 @@ export function registerInventoryImportRoutes(app,h){
     run(req=>{
       check(Buffer.isBuffer(req.body)&&req.body.length,"Upload an Excel .xlsx file.",400);
       const {rows,errors}=parseInventoryUpload(req.body);
-      const fingerprint=crypto.createHash("sha256").update(JSON.stringify(rows)).digest("hex");
       const products=db.prepare("SELECT * FROM products").all(),suppliers=db.prepare("SELECT * FROM suppliers").all(),categories=db.prepare("SELECT * FROM product_categories").all();
       const byId=new Map(products.map(p=>[p.id,p]));
       const bySku=new Map();
@@ -79,6 +78,11 @@ export function registerInventoryImportRoutes(app,h){
         const action=!p?"new":changed?"update":"unchanged";
         plan.push({...row,category:categoryName,id:p?.id||null,previous,sid:matches[0].id,action});
       }
+      // Fingerprint includes the *current* stock snapshot. A deliberate future
+      // physical recount may legitimately match an old Excel quantity after GRNs.
+      // Immediate repeats are no-ops, while identical preview commits are once-only.
+      const fingerprint=crypto.createHash("sha256")
+        .update(JSON.stringify({rows,baseline:plan.map(x=>x.previous)})).digest("hex");
       const duplicate=db.prepare("SELECT id FROM inventory_import_batches WHERE fingerprint=?").get(fingerprint);
       if(duplicate)errors.push("This exact inventory data has already been imported (batch #"+duplicate.id+"). Download a fresh template for another update.");
       const summary={
