@@ -52,7 +52,7 @@ export function registerInventoryImportRoutes(app,h){
         if(!bySku.has(key))bySku.set(key,[]);
         bySku.get(key).push(p);
       }
-      const plan=[],newCategories=new Set();
+      const plan=[],newCategories=new Set(),canonicalCategories=new Map(categories.map(c=>[normalize(c.name),c.name]));
       for(const row of rows){
         const matches=suppliers.filter(s=>normalize(s.name)===normalize(row.supplier));
         if(matches.length!==1||!matches[0].active){
@@ -69,13 +69,15 @@ export function registerInventoryImportRoutes(app,h){
           if(sameName){errors.push("Row "+row.row+": '"+row.name+"' already exists for this supplier with a different item code. Use its correct Product ID or Item Code.");continue;}
         }
         const cat=categories.find(c=>normalize(c.name)===normalize(row.category));
-        if(!cat)newCategories.add(row.category);
+        const categoryName=canonicalCategories.get(normalize(row.category))||row.category;
+        canonicalCategories.set(normalize(row.category),categoryName);
+        if(!cat)newCategories.add(categoryName);
         const previous=snapshot(p);
-        const changed=!previous||p.name!==row.name||(p.sku||"")!==row.sku||p.category!==row.category||
+        const changed=!previous||p.name!==row.name||(p.sku||"")!==row.sku||p.category!==categoryName||
           p.supplier_id!==matches[0].id||p.unit!==row.unit||p.stock!==row.qty||
           !moneyEqual(p.cost,row.cost)||!moneyEqual(p.sale_price,row.sell)||p.active!==1;
         const action=!p?"new":changed?"update":"unchanged";
-        plan.push({...row,id:p?.id||null,previous,sid:matches[0].id,action});
+        plan.push({...row,category:categoryName,id:p?.id||null,previous,sid:matches[0].id,action});
       }
       const duplicate=db.prepare("SELECT id FROM inventory_import_batches WHERE fingerprint=?").get(fingerprint);
       if(duplicate)errors.push("This exact inventory data has already been imported (batch #"+duplicate.id+"). Download a fresh template for another update.");
