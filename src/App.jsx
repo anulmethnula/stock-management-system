@@ -21,6 +21,8 @@ const request = async (path, method = "GET", body) => {
 const rs = n => "Rs " + Number(n || 0).toLocaleString("en-LK", { maximumFractionDigits: 2 });
 const one = (arr, id) => arr.find(x => Number(x.n ?? x.id) === Number(id));
 const today = date => date ? String(date).slice(0, 10) : "—";
+const colomboDate=()=>new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const businessNow=()=>new Date(colomboDate()+"T12:00:00");
 const stockLevel = p => p.stock <= 0 ? "out" : p.stock <= p.reorder ? "low" : "ok";
 const isClosed = s => ["Received", "Cancelled", "Part cancelled", "Dispatched", "Reversed"].includes(s);
 const active = arr => arr.filter(x => x.active);
@@ -34,9 +36,9 @@ const MENU = [
   ["history", "Stock History"], ["reports", "Reports"], ["staff", "Staff"]
 ];
 const PAGE_FEATURE = {home:"dashboard",products:"products",branches:"suppliers",customers:"customers",pos:"purchase_orders",grns:"goods_received",quotes:"quotations",orders:"customer_orders",deliveries:"deliveries",history:"stock_history",reports:"reports",staff:"staff"};
-const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items & stock counts"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["quotations","Customer quotations"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"]];
-const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="viewer"?"view":"edit"]));
-const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||(feature==="staff"?"none":user?.role==="viewer"?"view":"edit");
+const ACCESS_MODULES = [["dashboard","Dashboard"],["products","Items"],["suppliers","Suppliers"],["customers","Customers"],["purchase_orders","Stock requests (PO)"],["goods_received","Goods received (GRN)"],["quotations","Customer quotations"],["customer_orders","Customer orders"],["deliveries","Deliveries & returns"],["stock_history","Stock history"],["reports","Reports"],["stock_adjustments","Stock corrections & quarantine"]];
+const defaultAccess = role => Object.fromEntries(ACCESS_MODULES.map(([key])=>[key,role==="admin"?"edit":key==="stock_adjustments"?"none":role==="viewer"?"view":"edit"]));
+const accessLevel = (user,feature) => user?.role==="admin"?"edit":user?.permissions?.[feature]||"none";
 
 function Picture({ p, large = false }) {
   return <span className={large ? "item-picture large" : "item-picture"}>{p?.img ?
@@ -106,7 +108,7 @@ export default function App() {
   useEffect(() => {
     if (!user || accessLevel(user,PAGE_FEATURE[page])!=="none") return;
     const first=MENU.find(([key])=>accessLevel(user,PAGE_FEATURE[key])!=="none");
-    if(first) setPage(first[0]);
+    if(first) setPage(first[0]);else setPage("no-access");
   }, [user,page]);
 
   const canEdit = accessLevel(user,PAGE_FEATURE[page]) === "edit";
@@ -178,10 +180,11 @@ export default function App() {
             <RefreshCw size={14}/><span>Refresh</span></button>
         </div>
       </header>
-      <nav className="page-breadcrumb" aria-label="Breadcrumb"><button onClick={()=>setPage("home")}><LayoutDashboard size={14}/> Home</button>{page!=="home"&&<><ArrowRight size={13}/><strong>{MENU.find(([key])=>key===page)?.[1]||"Page"}</strong></>}</nav>
+      <nav className="page-breadcrumb" aria-label="Breadcrumb"><button disabled={accessLevel(user,"dashboard")==="none"} onClick={()=>setPage("home")}><LayoutDashboard size={14}/> Home</button>{page!=="home"&&<><ArrowRight size={13}/><strong>{MENU.find(([key])=>key===page)?.[1]||"Page"}</strong></>}</nav>
       {error && <div className="error-banner" role="alert"><AlertTriangle size={19}/><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={18}/></button></div>}
       <div className="page" key={page}>
-        {page === "home" && <Home {...ctx} setPage={setPage} />}
+        {page === "no-access" && <Empty title="No module access" sub="Ask your administrator to grant access."/>}
+        {page === "home" && accessLevel(user,"dashboard")!=="none" && <Home {...ctx} setPage={setPage} />}
         {page === "branches" && <Directory {...ctx} type="branches" />}
         {page === "customers" && <Directory {...ctx} type="customers" />}
         {page === "products" && <Products {...ctx} />}
@@ -252,20 +255,21 @@ function Login({ signIn, busy, error }) {
 function Home({ d, setPage, setModal, canEdit, branch,user }) {
   const [range,setRange]=useState("7d"),[hover,setHover]=useState(null);
   const low = active(d.products).filter(p => stockLevel(p) !== "ok");
+  const counts=d.dashboardCounts||{items:active(d.products).length,low:low.length,pending:d.pos.filter(p=>["Ordered","Part received"].includes(p.status)).length,orders:d.orders.filter(o=>["Open","Part dispatched"].includes(o.status)).length};
   const pending = d.pos.filter(p => ["Ordered","Part received"].includes(p.status));
   const openCustomers = d.orders.filter(o => ["Open","Part dispatched"].includes(o.status));
   const stats = [
-    [Package,"Items",active(d.products).length,"Active products","green","products"],[AlertTriangle,"Low stock",low.length,"Need attention","amber","products"],
-    [ClipboardList,"Pending POs",pending.length,"Waiting to receive","blue","pos"],[ShoppingBag,"Customer orders",openCustomers.length,"Waiting to send","purple","orders"]
+    [Package,"Items",counts.items,"Active products","green","products"],[AlertTriangle,"Low stock",counts.low,"Need attention","amber","products"],
+    [ClipboardList,"Pending POs",counts.pending,"Waiting to receive","blue","pos"],[ShoppingBag,"Customer orders",counts.orders,"Waiting to send","purple","orders"]
   ];
   const chart=useMemo(()=>{
-    const now=new Date(),b=[];if(range==="12m")for(let i=11;i>=0;i--){const x=new Date(now.getFullYear(),now.getMonth()-i,1);b.push({key:`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`,label:x.toLocaleDateString("en-LK",{month:"short"}),full:x.toLocaleDateString("en-LK",{month:"long",year:"numeric"}),received:0,delivered:0});}else{const n=range==="30d"?30:7;for(let i=n-1;i>=0;i--){const x=new Date(now);x.setDate(now.getDate()-i);b.push({key:[x.getFullYear(),String(x.getMonth()+1).padStart(2,"0"),String(x.getDate()).padStart(2,"0")].join("-"),label:x.toLocaleDateString("en-LK",n===7?{weekday:"short"}:{day:"numeric",month:"short"}),full:x.toLocaleDateString("en-LK",{day:"numeric",month:"short",year:"numeric"}),received:0,delivered:0});}}
-    const map=new Map(b.map(x=>[x.key,x]));d.movements.forEach(m=>{const x=map.get(String(m.at).slice(0,range==="12m"?7:10));if(!x)return;if(m.type==="Goods received"&&m.qty>0)x.received+=m.qty;if(m.type==="Delivered to customer"&&m.qty<0)x.delivered+=Math.abs(m.qty);});const max=Math.max(1,...b.flatMap(x=>[x.received,x.delivered])),pts=k=>b.map((x,i)=>({x:20+i*660/(b.length-1),y:188-x[k]/max*140,value:x[k],label:x.full})),smooth=p=>p.reduce((s,x,i)=>i?s+` C ${(p[i-1].x+x.x)/2} ${p[i-1].y}, ${(p[i-1].x+x.x)/2} ${x.y}, ${x.x} ${x.y}`:`M ${x.x} ${x.y}`,"");const r=pts("received"),v=pts("delivered"),fill=p=>smooth(p)+` L ${p.at(-1).x} 202 L ${p[0].x} 202 Z`;return{b,r,v,rp:smooth(r),vp:smooth(v),rf:fill(r),vf:fill(v)};
-  },[d.movements,range]);
-  return <div className="home-dashboard"><section className="home-hero"><div className="home-hero-copy"><div className="eyebrow">STOCKEASY ERP</div><h1>Complete Stock Management<br/>for <span>Your Business</span></h1><p>Manage inventory, suppliers, orders, and deliveries — all in one powerful, easy-to-use system.</p><div className="home-hero-actions"><button className="btn" disabled={!canEdit} onClick={()=>setModal({type:"po"})}><Plus size={17}/> Request Stock</button><button className="btn ghost" disabled={accessLevel(user,"reports")==="none"} onClick={()=>setPage("reports")}><BarChart3 size={17}/> View Reports</button></div><div className="home-benefits"><span><Boxes size={18}/> Track stock</span><span><Shield size={18}/> Reduce shortages</span><span><BarChart3 size={18}/> Improve control</span></div></div><div className="home-hero-visual" aria-hidden="true"><div className="hero-glow"/><div className="hero-laptop"><div className="hero-screen"><b>StockEasy</b><span/><span/><span/></div><i/></div><div className="hero-box box-one"/><div className="hero-box box-two"/><div className="hero-float one"><Package size={19}/><span><small>Inventory</small><strong>{active(d.products).length} items</strong></span></div><div className="hero-float two"><Truck size={19}/><span><small>Pending POs</small><strong>{pending.length} requests</strong></span></div></div></section>
+    const now=businessNow(),b=[];if(range==="12m")for(let i=11;i>=0;i--){const x=new Date(now.getFullYear(),now.getMonth()-i,1);b.push({key:`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`,label:x.toLocaleDateString("en-LK",{month:"short"}),full:x.toLocaleDateString("en-LK",{month:"long",year:"numeric"}),received:0,delivered:0});}else{const n=range==="30d"?30:7;for(let i=n-1;i>=0;i--){const x=new Date(now);x.setDate(now.getDate()-i);b.push({key:[x.getFullYear(),String(x.getMonth()+1).padStart(2,"0"),String(x.getDate()).padStart(2,"0")].join("-"),label:x.toLocaleDateString("en-LK",n===7?{weekday:"short"}:{day:"numeric",month:"short"}),full:x.toLocaleDateString("en-LK",{day:"numeric",month:"short",year:"numeric"}),received:0,delivered:0});}}
+    const map=new Map(b.map(x=>[x.key,x]));(d.dashboardChart||[]).forEach(m=>{const x=map.get(String(m.day).slice(0,range==="12m"?7:10));if(x){x.received+=m.received;x.delivered+=m.delivered;}});const max=Math.max(1,...b.flatMap(x=>[x.received,x.delivered])),min=Math.min(0,...b.flatMap(x=>[x.received,x.delivered])),pts=k=>b.map((x,i)=>({x:20+i*660/(b.length-1),y:188-(x[k]-min)/(max-min)*140,value:x[k],label:x.full})),smooth=p=>p.reduce((s,x,i)=>i?s+` C ${(p[i-1].x+x.x)/2} ${p[i-1].y}, ${(p[i-1].x+x.x)/2} ${x.y}, ${x.x} ${x.y}`:`M ${x.x} ${x.y}`,"");const r=pts("received"),v=pts("delivered"),fill=p=>smooth(p)+` L ${p.at(-1).x} 202 L ${p[0].x} 202 Z`;return{b,r,v,rp:smooth(r),vp:smooth(v),rf:fill(r),vf:fill(v)};
+  },[d.dashboardChart,range]);
+  return <div className="home-dashboard"><section className="home-hero"><div className="home-hero-copy"><div className="eyebrow">STOCKEASY ERP</div><h1>Complete Stock Management<br/>for <span>Your Business</span></h1><p>Manage inventory, suppliers, orders, and deliveries — all in one powerful, easy-to-use system.</p><div className="home-hero-actions"><button className="btn" disabled={accessLevel(user,"purchase_orders")!=="edit"} onClick={()=>setModal({type:"po"})}><Plus size={17}/> Request Stock</button><button className="btn ghost" disabled={accessLevel(user,"reports")==="none"} onClick={()=>setPage("reports")}><BarChart3 size={17}/> View Reports</button></div><div className="home-benefits"><span><Boxes size={18}/> Track stock</span><span><Shield size={18}/> Reduce shortages</span><span><BarChart3 size={18}/> Improve control</span></div></div><div className="home-hero-visual" aria-hidden="true"><div className="hero-glow"/><div className="hero-laptop"><div className="hero-screen"><b>StockEasy</b><span/><span/><span/></div><i/></div><div className="hero-box box-one"/><div className="hero-box box-two"/><div className="hero-float one"><Package size={19}/><span><small>Inventory</small><strong>{counts.items} items</strong></span></div><div className="hero-float two"><Truck size={19}/><span><small>Pending POs</small><strong>{counts.pending} requests</strong></span></div></div></section>
     <h2 className="dashboard-title">Your Stock at a Glance</h2><div className="home-kpis">{stats.map(([Icon,label,n,sub,tone,target])=><button type="button" className={`home-kpi ${tone}`} key={label} disabled={accessLevel(user,PAGE_FEATURE[target])==="none"} onClick={()=>setPage(target)} aria-label={`Open ${label}`}><span><Icon size={21}/></span><div><strong>{n}</strong><b>{label}</b><small>{sub}</small></div></button>)}</div>
-    <div className="home-dashboard-grid"><section className="home-chart-card"><div className="home-card-head"><div><h2>Stock Movement</h2><p>Items received vs. delivered</p></div><div className="chart-ranges">{[["7d","7 days"],["30d","30 days"],["12m","12 months"]].map(([k,l])=><button key={k} className={range===k?"on":""} onClick={()=>{setRange(k);setHover(null)}}>{l}</button>)}</div></div><div className="chart-legend"><span><i className="received"/>Received</span><span><i className="delivered"/>Delivered</span></div><div className="movement-chart" key={range}>{hover&&<div className="chart-tooltip" style={{left:`${hover.x/7}%`,top:`${hover.y/2.2}%`}}><strong>{hover.label}</strong><span>{hover.series}: {hover.value}</span></div>}<svg viewBox="0 0 700 225"><path className="chart-fill received" d={chart.rf}/><path className="chart-fill delivered" d={chart.vf}/><path pathLength="1" className="chart-line received" d={chart.rp}/><path pathLength="1" className="chart-line delivered" d={chart.vp}/>{[[chart.r,"Received","received"],[chart.v,"Delivered","delivered"]].map(([p,l,c])=>p.map((x,i)=><circle key={l+i} className={`chart-dot ${c}`} cx={x.x} cy={x.y} r="4" tabIndex="0" onMouseEnter={()=>setHover({...x,series:l})} onMouseLeave={()=>setHover(null)} onFocus={()=>setHover({...x,series:l})} onBlur={()=>setHover(null)}/>))}{chart.b.map((x,i)=>(range!=="30d"||i%5===0||i===chart.b.length-1)&&<text key={x.key} x={chart.r[i].x} y="220" textAnchor="middle">{x.label}</text>)}</svg></div></section>
-      <section className="recent-po-card"><div className="home-card-head"><div><h2>Recent Stock Requests</h2><p>Latest supplier requests</p></div><button className="text-button" onClick={()=>setPage("pos")}>View all <ArrowRight size={14}/></button></div><div className="recent-po-list">{d.pos.slice(0,5).map(po=><div className="recent-po" key={po.n}><span className="row-icon"><ClipboardList size={17}/></span><div><strong>{po.id}</strong><small>{branch(po.sid).name} · {po.items.reduce((n,l)=>n+l.qty,0)}</small></div><State value={po.status}/><div className="recent-po-actions"><button className="icon-btn" title="View request" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={15}/></button>{canEdit&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn primary-icon" title="Receive goods" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={15}/></button>}</div></div>)}{!d.pos.length&&<p className="mute">No stock requests yet.</p>}</div></section></div>
+    <div className="home-dashboard-grid"><section className="home-chart-card"><div className="home-card-head"><div><h2>Stock Movement</h2><p>Net received vs. delivered (including reversals)</p></div><div className="chart-ranges">{[["7d","7 days"],["30d","30 days"],["12m","12 months"]].map(([k,l])=><button key={k} className={range===k?"on":""} onClick={()=>{setRange(k);setHover(null)}}>{l}</button>)}</div></div><div className="chart-legend"><span><i className="received"/>Received</span><span><i className="delivered"/>Delivered</span></div><div className="movement-chart" key={range}>{hover&&<div className="chart-tooltip" style={{left:`${hover.x/7}%`,top:`${hover.y/2.2}%`}}><strong>{hover.label}</strong><span>{hover.series}: {hover.value}</span></div>}<svg viewBox="0 0 700 225"><path className="chart-fill received" d={chart.rf}/><path className="chart-fill delivered" d={chart.vf}/><path pathLength="1" className="chart-line received" d={chart.rp}/><path pathLength="1" className="chart-line delivered" d={chart.vp}/>{[[chart.r,"Received","received"],[chart.v,"Delivered","delivered"]].map(([p,l,c])=>p.map((x,i)=><circle key={l+i} className={`chart-dot ${c}`} cx={x.x} cy={x.y} r="4" tabIndex="0" onMouseEnter={()=>setHover({...x,series:l})} onMouseLeave={()=>setHover(null)} onFocus={()=>setHover({...x,series:l})} onBlur={()=>setHover(null)}/>))}{chart.b.map((x,i)=>(range!=="30d"||i%5===0||i===chart.b.length-1)&&<text key={x.key} x={chart.r[i].x} y="220" textAnchor="middle">{x.label}</text>)}</svg></div></section>
+      <section className="recent-po-card"><div className="home-card-head"><div><h2>Recent Stock Requests</h2><p>Latest supplier requests</p></div><button className="text-button" disabled={accessLevel(user,"purchase_orders")==="none"} onClick={()=>setPage("pos")}>View all <ArrowRight size={14}/></button></div><div className="recent-po-list">{d.pos.slice(0,5).map(po=><div className="recent-po" key={po.n}><span className="row-icon"><ClipboardList size={17}/></span><div><strong>{po.id}</strong><small>{branch(po.sid).name} · {po.items.reduce((n,l)=>n+l.qty,0)}</small></div><State value={po.status}/><div className="recent-po-actions"><button className="icon-btn" title="View request" onClick={()=>setModal({type:"view-po",record:po})}><Eye size={15}/></button>{accessLevel(user,"goods_received")==="edit"&&["Ordered","Part received"].includes(po.status)&&<button className="icon-btn primary-icon" title="Receive goods" onClick={()=>setModal({type:"grn",po})}><PackageCheck size={15}/></button>}</div></div>)}{!d.pos.length&&<p className="mute">No stock requests yet.</p>}</div></section></div>
   </div>;
 }
 
@@ -348,7 +352,7 @@ function LegacyProducts({d,branch,setModal,confirm,canEdit,user,productFocus,set
       <div className="inventory-table-wrap"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>
         {filtered.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div>
           <span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong>
-          <div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>
+          <div className="inventory-stock"><strong>{p.stock}</strong>{p.damagedStock>0&&<small style={{display:"block",color:"#a46a13"}}>{p.damagedStock} quarantined</small>}</div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>
           {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}
           <div className="po-actions">{canEdit&&<button className="icon-btn" title="Edit item" onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}
             {canEdit&&<button className="icon-btn primary-icon" title="Update stock count" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}
@@ -365,19 +369,19 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
   const totalPages=Math.max(1,Math.ceil(filtered.length/10)),currentPage=Math.min(page,totalPages),visible=filtered.slice((currentPage-1)*10,currentPage*10);
   useEffect(()=>setPage(1),[q,showArchived,category,stockFilter]);
   useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target){setQ(target.name);setCategory("all");setStockFilter("all");setShowArchived(!target.active);}setProductFocus(null);},[productFocus]);
-  const actions=p=><div className="inventory-actions">{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{canEdit&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
+  const actions=p=><div className="inventory-actions">{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
   const status=p=>!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low stock":"Out of stock"}</Pill>;
   return <div className="inventory-page">
     <SectionHeading title="Factory inventory" sub="Helmets, electrical components, safety equipment and manufacturing materials." action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
     {canEdit&&<div className="inventory-secondary-actions"><button className="btn ghost sm" type="button" onClick={()=>setModal({type:"categories"})}><Pencil size={15}/> Manage Categories</button></div>}
     <div className="inventory-summary">{[[Package,"Total items",counts.total,"all","green"],[Check,"In stock",counts.ok,"ok","blue"],[AlertTriangle,"Low stock",counts.low,"low","amber"],[X,"Out of stock",counts.out,"out","red"]].map(([Icon,label,value,key,tone])=><button key={key} className={`inventory-summary-card ${tone} ${stockFilter===key?"on":""}`} onClick={()=>setStockFilter(key)}><span><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></button>)}</div>
     <div className="inventory-tools"><SearchBox value={q} change={setQ} placeholder="Search item name, code, category or supplier..."/><select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select><select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label><div className="inventory-view-toggle" role="group" aria-label="Inventory view"><button className={view==="grid"?"on":""} onClick={()=>setView("grid")} title="Grid view"><Boxes size={17}/></button><button className={view==="table"?"on":""} onClick={()=>setView("table")} title="Table view"><ClipboardList size={17}/></button></div></div>
-    {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>{p.sku||"No item code"}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Stock</b><strong>{p.stock}</strong></span><span><b>Prices</b>{rs(p.cost)} / {rs(p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>{status(p)}{actions(p)}</div>)}</div>}
+    {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>{p.sku||"No item code"}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Available stock</b><strong>{p.stock}</strong>{p.damagedStock>0&&<small>{p.damagedStock} quarantined</small>}</span><span><b>Prices</b>{rs(p.cost)} / {rs(p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>{status(p)}{actions(p)}</div>)}</div>}
     {!!filtered.length&&<div className="inventory-pagination"><span>Showing {(currentPage-1)*10+1}-{Math.min(currentPage*10,filtered.length)} of {filtered.length} items</span><div><button className="icon-btn" disabled={currentPage===1} title="Previous page" onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" disabled={currentPage===totalPages} title="Next page" onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>}
   </div>;
 }
 
-function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit }) {
+function PurchaseOrders({ d,branch,product,setModal,confirm,canEdit,user }) {
   const [q,setQ]=useState(""),[supplierFilter,setSupplierFilter]=useState("all"),[statusFilter,setStatusFilter]=useState("open"),[page,setPage]=useState(1);
   const suppliers=[...new Set(d.pos.map(o=>o.sid))].map(id=>branch(id));
   const list=d.pos.filter(o => (supplierFilter==="all"||Number(supplierFilter)===o.sid) && (statusFilter==="all"||(statusFilter==="open"?["Ordered","Part received"].includes(o.status):o.status===statusFilter)) && [o.id,branch(o.sid).name,o.status,...o.items.map(i=>product(i.pid).name)].join(" ").toLowerCase().includes(q.toLowerCase()));
@@ -492,49 +496,45 @@ function Deliveries({d,customer,product,setModal,canEdit,reason}) {
           <div className="movement-note"><strong>{tab==="deliveries"?(x.byName||"Staff"):(x.note||"No reason")}</strong>{tab==="deliveries"&&<small>{x.note||"No note"}</small>}</div><State value={x.status}/>
           <div className="po-actions"><button className="icon-btn" title="View and print" onClick={()=>setModal({type:tab==="deliveries"?"view-delivery":"view-return",record:x})}><Eye size={17}/></button>
             {tab==="deliveries"&&canEdit&&x.status==="Active"&&<button className="icon-btn primary-icon" title="Record customer return" onClick={()=>setModal({type:"return",delivery:x})}><RotateCcw size={17}/></button>}
-            {canEdit&&x.status==="Active"&&<button className="icon-btn danger" title={tab==="deliveries"?"Reverse delivery":"Reverse return"} onClick={()=>reason("Reverse "+x.id,tab==="deliveries"?"This restores sent quantities to stock. Deliveries with returns cannot be reversed.":"This removes the returned quantity from stock and records the correction.",tab==="deliveries"?"/deliveries/"+x.n+"/reverse":"/returns/"+x.n+"/reverse","deliveries")}><X size={17}/></button>}</div>
+            {canEdit&&x.status==="Active"&&<button className="icon-btn danger" title={tab==="deliveries"?"Reverse delivery":"Reverse return"} onClick={()=>reason("Reverse "+x.id,tab==="deliveries"?"This restores sent quantities to stock. Deliveries with returns cannot be reversed.":"This removes the returned quantity from its original stock condition and records the correction.",tab==="deliveries"?"/deliveries/"+x.n+"/reverse":"/returns/"+x.n+"/reverse","deliveries")}><X size={17}/></button>}</div>
         </div>)}</div>}
   </>;
 }
 
 function StockHistory({d,product,user,setModal}) {
   const [q,setQ]=useState(""),[typeFilter,setTypeFilter]=useState("all"),[itemFilter,setItemFilter]=useState("all"),[from,setFrom]=useState(""),[to,setTo]=useState(""),[direction,setDirection]=useState("all"),[page,setPage]=useState(1);
-  const movementGroup=type=>/reversed/i.test(type)?"Reversal":/goods received/i.test(type)?"GRN":/return/i.test(type)?"Return":/deliver/i.test(type)?"Delivery":"Adjustment";
-  const relatedDocument=m=>{if(/^GRTN-/i.test(m.reference))return {type:"view-supplier-return",record:d.supplierReturns.find(x=>x.id===m.reference)};if(/^GRN-/i.test(m.reference))return {type:"view-grn",record:d.grns.find(x=>x.id===m.reference)};if(/^DEL-/i.test(m.reference))return {type:"view-delivery",record:d.deliveries.find(x=>x.id===m.reference)};if(/^RET-/i.test(m.reference))return {type:"view-return",record:d.returns.find(x=>x.id===m.reference)};return null;};
-  const rows=d.movements.filter(m=>{
-    const date=String(m.at||"").slice(0,10),group=movementGroup(m.type);
-    return [product(m.pid).name,m.reference,m.actor].join(" ").toLowerCase().includes(q.toLowerCase())
-      &&(typeFilter==="all"||group===typeFilter)&&(itemFilter==="all"||Number(itemFilter)===m.pid)
-      &&(!from||date>=from)&&(!to||date<=to)&&(direction==="all"||(direction==="in"?m.qty>0:m.qty<0));
-  });
-  const totals={records:d.movements.length,in:d.movements.filter(m=>m.qty>0).reduce((n,m)=>n+m.qty,0),out:Math.abs(d.movements.filter(m=>m.qty<0).reduce((n,m)=>n+m.qty,0)),adjustments:d.movements.filter(m=>movementGroup(m.type)==="Adjustment").length};
-  const pageSize=10,totalPages=Math.max(1,Math.ceil(rows.length/pageSize)),currentPage=Math.min(page,totalPages),visible=rows.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  const movementGroup=type=>/reversed/i.test(type)?"Reversal":/goods received/i.test(type)?"GRN":/^supplier return/i.test(type)?"Supplier Return":/^customer return/i.test(type)?"Customer Return":/deliver/i.test(type)?"Delivery":/^quarantine/i.test(type)?"Quarantine":"Adjustment";
+  const relatedDocument=m=>{if(/^GRTN-/i.test(m.reference))return {type:"view-supplier-return",record:d.supplierReturns.find(x=>x.id===m.reference)};if(/^GRN-/i.test(m.reference))return {type:"view-grn",record:d.grns.find(x=>x.id===m.reference)};if(/^(DN|DEL)-/i.test(m.reference))return {type:"view-delivery",record:d.deliveries.find(x=>x.id===m.reference)};if(/^(RTN|RET)-/i.test(m.reference))return {type:"view-return",record:d.returns.find(x=>x.id===m.reference)};return null;};
+  const [result,setResult]=useState({rows:[],totals:{records:0,stockIn:0,stockOut:0,adjustments:0},page:1,pageSize:10}),[fetching,setFetching]=useState(true),[historyError,setHistoryError]=useState("");
   useEffect(()=>setPage(1),[q,typeFilter,itemFilter,from,to,direction]);
+  useEffect(()=>{let cancelled=false;setFetching(true);setHistoryError("");const query=new URLSearchParams({q,type:typeFilter,pid:itemFilter,from,to,direction,page:String(page)});request("/stock-history?"+query).then(value=>{if(!cancelled)setResult(value)}).catch(e=>{if(!cancelled)setHistoryError(e.message)}).finally(()=>{if(!cancelled)setFetching(false)});return()=>{cancelled=true};},[q,typeFilter,itemFilter,from,to,direction,page,d]);
+  const totals={records:result.totals.records,in:result.totals.stockIn,out:result.totals.stockOut,adjustments:result.totals.adjustments};
+  const pageSize=result.pageSize,totalPages=Math.max(1,Math.ceil(totals.records/pageSize)),currentPage=result.page,visible=result.rows;
   const reset=()=>{setQ("");setTypeFilter("all");setItemFilter("all");setFrom("");setTo("");setDirection("all");};
   return <>
     <SectionHeading title="Stock history" sub="A permanent record of goods received, sent out, returned and corrected."
-      action={user.role==="admin"?()=>setModal({type:"adjust"}):null} label="Correct stock" Icon={RefreshCw}/>
+      action={accessLevel(user,"stock_adjustments")==="edit"?()=>setModal({type:"adjust"}):null} label="Correct stock" Icon={RefreshCw}/>
     <div className="stock-history-summary"><button type="button" className={typeFilter==="all"&&direction==="all"?"on":""} onClick={()=>{setTypeFilter("all");setDirection("all")}}><span><History size={20}/></span><div><strong>{totals.records}</strong><small>Total records</small></div></button><button type="button" className={direction==="in"?"on stock-in":"stock-in"} onClick={()=>setDirection("in")}><span><ArrowDownLeft size={20}/></span><div><strong>{totals.in}</strong><small>Stock in</small></div></button><button type="button" className={direction==="out"?"on stock-out":"stock-out"} onClick={()=>setDirection("out")}><span><ArrowUpRight size={20}/></span><div><strong>{totals.out}</strong><small>Stock out</small></div></button><button type="button" className={typeFilter==="Adjustment"?"on adjustment":"adjustment"} onClick={()=>{setTypeFilter("Adjustment");setDirection("all")}}><span><BarChart3 size={20}/></span><div><strong>{totals.adjustments}</strong><small>Adjustments</small></div></button></div>
     <div className="stock-history-filters"><div className="stock-history-search stock-history-field"><span>Search</span><SearchBox value={q} change={setQ} placeholder="Search item, document or staff…"/></div>
-      <label className="stock-history-field"><span>Movement Type</span><select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} aria-label="Filter by movement type"><option value="all">All movement types</option><option value="GRN">GRN</option><option value="Delivery">Delivery</option><option value="Return">Return</option><option value="Adjustment">Adjustment</option><option value="Reversal">Reversal</option></select></label>
+      <label className="stock-history-field"><span>Movement Type</span><select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} aria-label="Filter by movement type"><option value="all">All movement types</option><option value="GRN">GRN</option><option value="Delivery">Delivery</option><option value="Supplier Return">Supplier Return</option><option value="Customer Return">Customer Return</option><option value="Quarantine">Quarantine</option><option value="Adjustment">Adjustment</option><option value="Reversal">Reversal</option></select></label>
       <label className="stock-history-field"><span>Item</span><select value={itemFilter} onChange={e=>setItemFilter(e.target.value)} aria-label="Filter by item"><option value="all">All items</option>{[...d.products].sort((a,b)=>a.name.localeCompare(b.name)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <label><span>From</span><input type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)}/></label>
       <label><span>To</span><input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)}/></label>
-      <label className="stock-history-field"><span>Direction</span><select value={direction} onChange={e=>setDirection(e.target.value)} aria-label="Filter by stock direction"><option value="all">Stock in & out</option><option value="in">Stock in</option><option value="out">Stock out</option></select></label>
+      <label className="stock-history-field"><span>Direction</span><select value={direction} onChange={e=>setDirection(e.target.value)} aria-label="Filter by stock direction"><option value="all">Stock in & out</option><option value="in">Stock in</option><option value="out">Stock out</option><option value="quarantine">Quarantine changes</option></select></label>
       <button className="btn ghost stock-history-reset" type="button" onClick={reset}>Reset filters</button></div>
-    <div className="stock-history-count"><strong>{rows.length}</strong> matching record{rows.length===1?"":"s"}</div>
-    {!rows.length?<Empty Icon={History} title="No stock movements" sub="Movements appear after stock is added, received, sent or corrected."/>:
+    <div className="stock-history-count"><strong>{totals.records}</strong> matching record{totals.records===1?"":"s"}</div>
+    {historyError?<p className="field-error">{historyError}</p>:fetching?<p className="mute">Loading stock history…</p>:!visible.length?<Empty Icon={History} title="No stock movements" sub="Movements appear after stock is added, received, sent or corrected."/>:
       <><div className="stock-history-table"><div className="stock-history-head stock-history-row"><span>Date & Time</span><span>Item</span><span>Movement Type</span><span>Reference</span><span>Stock In</span><span>Stock Out</span><span>Recorded By</span><span>Actions</span></div>
       {visible.map(m=>{const doc=relatedDocument(m),date=String(m.at||"").replace("T"," ");return <div className="stock-history-row" key={m.id}>
         <div className="stock-history-time"><strong>{date.slice(0,10)}</strong><small>{date.slice(11,16)||"—"}</small></div>
         <div className="stock-history-item"><span className={"delta-icon "+(m.qty>0?"plus":"minus")}>{m.qty>0?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span><div><strong>{product(m.pid).name}</strong>{m.note&&<small>{m.note}</small>}</div></div>
-        <div><span className="stock-history-type">{movementGroup(m.type)}</span><small className="stock-history-event">{m.type}</small></div>
+        <div><span className="stock-history-type">{movementGroup(m.type)}</span><small className="stock-history-event">{m.type}</small>{!!m.damagedQty&&<small className="stock-history-event">Quarantine {m.damagedQty>0?"+":""}{m.damagedQty}</small>}</div>
         <div>{doc?.record?<button className="stock-history-reference" onClick={()=>setModal(doc)}>{m.reference}</button>:<span className="stock-history-reference plain">{m.reference}</span>}</div>
         <strong className={`stock-history-in ${m.qty>0?"has-value":""}`}>{m.qty>0?`+${m.qty}`:"—"}</strong><strong className={`stock-history-out ${m.qty<0?"has-value":""}`}>{m.qty<0?m.qty:"—"}</strong>
         <div className="stock-history-actor">{m.actor||"System"}</div><div className="stock-history-actions">{doc?.record?<button className="icon-btn" title={"View "+m.reference} aria-label={"View "+m.reference} onClick={()=>setModal(doc)}><Eye size={16}/></button>:<span>—</span>}</div>
       </div>})}</div>
-      <div className="stock-history-pagination"><span>Showing {(currentPage-1)*pageSize+1}-{Math.min(currentPage*pageSize,rows.length)} of {rows.length} records</span><div><button className="icon-btn" title="Previous page" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" title="Next page" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div></>}
-    {d.movements.length>=1000&&<p className="mute">Showing the latest 1,000 movements.</p>}
+      <div className="stock-history-pagination"><span>Showing {(currentPage-1)*pageSize+1}-{Math.min(currentPage*pageSize,totals.records)} of {totals.records} records</span><div><button className="icon-btn" title="Previous page" disabled={currentPage===1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" title="Next page" disabled={currentPage===totalPages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div></>}
+
   </>;
 }
 
@@ -629,7 +629,7 @@ function Dialog({ modal, ctx, staff, close }) {
       <button className="btn ghost" onClick={close}>Keep it</button></div></Modal>;
   if(modal.type==="reason") return <ReasonDialog modal={modal} busy={busy} close={close}/>;
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
-  if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d} refresh={refresh}/>;
+  if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d} refresh={refresh} user={user}/>;
   if(modal.type==="categories") return <CategoryManager d={d} close={close} refresh={refresh}/>;
   if(modal.type==="po") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="po"/>;
   if(modal.type==="quotation") return <QuotationForm record={modal.record} d={d} close={close} busy={busy} action={action}/>;
@@ -641,7 +641,7 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="supplier-return") return <SupplierReturnForm grn={modal.grn} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="dispatch") return <MovementForm title="Send goods to customer" type="dispatch" doc={modal.order} d={d} close={close} busy={busy} action={action}/>;
   if(modal.type==="return") return <MovementForm title="Customer return" type="return" doc={modal.delivery} d={d} close={close} busy={busy} action={action}/>;
-  if(modal.type==="adjust") return <AdjustmentForm d={d} record={modal.record} busy={busy} close={close} action={action}/>;
+  if(modal.type==="adjust"&&accessLevel(user,"stock_adjustments")==="edit") return <AdjustmentForm d={d} record={modal.record} busy={busy} close={close} action={action} user={user}/>;
   if(modal.type==="staff") return <StaffForm record={modal.record} close={close} busy={busy} action={action}/>;
   if(modal.type==="staff-permissions") return <StaffPermissionsView record={modal.record} close={close}/>;
   if(["view-po","view-order","view-delivery","view-grn","view-return","view-supplier-return"].includes(modal.type)) return <DocumentView modal={modal} d={d} branch={branch} customer={customer} product={product} openProduct={openProduct} close={close}/>;
@@ -697,7 +697,7 @@ function DirectoryForm({modal,close,busy,action}) {
     </form>
   </Modal>;
 }
-function ProductForm({modal,close,busy,action,d,refresh}) {
+function ProductForm({modal,close,busy,action,d,refresh,user}) {
   const p=modal.record,branches=active(d.branches);
   const categories=d.categories||[];
   const defaultCategory=categories.find(c=>c.active&&c.name==="Helmets")?.name||categories.find(c=>c.active)?.name||p?.category||"Other";
@@ -732,9 +732,9 @@ function ProductForm({modal,close,busy,action,d,refresh}) {
       <div className="notice"><Info size={18}/> You can still request this item from any other supplier in a PO.</div>
       <div className="two"><div><label>Buying price (Rs)</label><input type="number" min="0" step=".01" value={f.cost} onChange={e=>set("cost",e.target.value)} required/></div>
         <div><label>Selling price (Rs)</label><input type="number" min="0" step=".01" value={f.sell} onChange={e=>set("sell",e.target.value)} required/></div></div>
-      <div className="two">{!p&&<div><label>Starting stock</label><input type="number" min="0" step="1" value={f.stock} onChange={e=>set("stock",e.target.value)} required/></div>}
+      <div className="two">{!p&&<div><label>Starting stock</label><input disabled={accessLevel(user,"stock_adjustments")!=="edit"} type="number" min="0" step="1" value={f.stock} onChange={e=>set("stock",e.target.value)} required/></div>}
         <div><label>Warn when stock reaches</label><input type="number" min="0" step="1" value={f.reorder} onChange={e=>set("reorder",e.target.value)} required/></div></div>
-      {p&&<div className="notice"><Info size={18}/> Current stock: <strong>{p.stock}</strong>. Use "Correct stock" for changes, so history is saved.</div>}
+      {p&&<div className="notice"><Info size={18}/> Available stock: <strong>{p.stock}</strong> · Quarantined: <strong>{p.damagedStock||0}</strong>. Use "Correct stock" for changes, so history is saved.</div>}
       {p&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Active item</label>}
       <Controls busy={busy} close={close} valid={!!f.name.trim()&&!!f.sid} label={p?"Update item":"Add item"}/>
     </form>
@@ -834,7 +834,7 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
 }
 function MovementForm({title,type,doc,d,close,busy,action}) {
   const isGRN=type==="grn",isReturn=type==="return",isDispatch=!isGRN&&!isReturn;
-  const [q,setQ]=useState({}),[by,setBy]=useState(""),[note,setNote]=useState("");
+  const [q,setQ]=useState({}),[by,setBy]=useState(""),[note,setNote]=useState(""),[conditions,setConditions]=useState({});
   const existing=doc.items||doc.lines;
   const options=existing.map(l=>{
     const p=one(d.products,l.pid);
@@ -843,17 +843,17 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
     const max=isGRN||isReturn?before:Math.min(before,p?.stock||0);
     return {...l,p,max:Math.max(0,max),remaining:before};
   });
-  const lines=options.filter(l=>number(q[l.pid])>0).map(l=>({pid:l.pid,qty:number(q[l.pid])}));
+  const lines=options.filter(l=>number(q[l.pid])>0).map(l=>({pid:l.pid,qty:number(q[l.pid]),...(isReturn?{condition:conditions[l.pid]||"quarantine"}:{})}));
   const receiveAll=()=>setQ(Object.fromEntries(options.filter(l=>l.max>0).map(l=>[l.pid,l.max])));
   const dispatchAll=()=>setQ(Object.fromEntries(options.filter(l=>l.max>0).map(l=>[l.pid,l.max])));
   const resetQuantities=()=>setQ({});
   const selectedTotal=lines.reduce((sum,l)=>sum+l.qty,0);
   const destination=isGRN?"/pos/"+doc.n+"/receive":isReturn?"/returns":"/customer-orders/"+doc.n+"/dispatch";
-  const label=isGRN?"Save GRN and add stock":isReturn?"Save return and add stock":"Create delivery and reduce stock";
+  const label=isGRN?"Save GRN and add stock":isReturn?"Save customer return":"Create delivery and reduce stock";
   const hint=isGRN?"Enter ONLY what actually arrived. Stock increases when saved.":isReturn?
-    "Returned quantities will go back into available stock.":"Only sent goods reduce stock. You can send the remaining items later.";
+    "Inspect returns. Damaged or uninspected goods go into quarantine, not available stock.":"Only sent goods reduce stock. You can send the remaining items later.";
   const handle=e=>{e.preventDefault();action(destination,"POST",isReturn?{deliveryN:doc.n,lines,note}:{lines,note,by},
-    isGRN?"GRN saved — stock increased.":isReturn?"Customer return saved — stock increased.":"Delivery saved — stock decreased.",
+    isGRN?"GRN saved — stock increased.":isReturn?"Customer return saved — stock updated.":"Delivery saved — stock decreased.",
     isGRN?"grns":"deliveries");};
   return <Modal wide className={isGRN?"grn-receive-modal":isDispatch?"grn-receive-modal dispatch-modal":""} title={title} sub={hint} close={close}>
     <form onSubmit={handle}>
@@ -875,7 +875,7 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
         </div>})}</div></>:
       <div className="form-item-list">{options.map(l=><div className="form-item" key={l.pid}>
         <Picture p={l.p}/><div className="grow"><strong>{l.p?.name}</strong>
-          <small>{isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small></div>
+          <small>{isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small>{isReturn&&l.max>0&&<select aria-label={"Returned condition for "+l.p?.name} value={conditions[l.pid]||"quarantine"} onChange={e=>setConditions(v=>({...v,[l.pid]:e.target.value}))}><option value="quarantine">Quarantine — damaged / uninspected</option><option value="sellable">Inspected — sellable</option></select>}</div>
         {l.max>0?<Qty value={number(q[l.pid])} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">0 available</Pill>}
       </div>)}</div>}
       {(isGRN||isDispatch)&&<div className="order-total"><span>{lines.length} item{lines.length===1?"":"s"} selected</span><strong>{selectedTotal} {isGRN?"to receive":"units to dispatch"}</strong></div>}
@@ -919,18 +919,23 @@ function CategoryManager({d,close,refresh}) {
     <div className="form-actions"><button className="btn ghost" type="button" onClick={close}>Close</button></div>
   </Modal>;
 }
-function AdjustmentForm({d,record,busy,close,action}) {
+function AdjustmentForm({d,record,busy,close,action,user}) {
   const [pid,setPid]=useState(record?.id||active(d.products)[0]?.id||""),[target,setTarget]=useState(record?.stock??""),[reason,setReason]=useState("");
+  const [mode,setMode]=useState("count"),[qty,setQty]=useState("");
   const selected=one(d.products,pid);
   const change=Number(target)-Number(selected?.stock||0);
+  const max=mode==="hold"?selected?.stock||0:selected?.damagedStock||0;
+  const go=accessLevel(user,"stock_history")!=="none"?"history":"products";
+  const valid=!!pid&&!!reason.trim()&&(mode==="count"?target!==""&&Number.isSafeInteger(Number(target))&&Number(target)>=0&&change!==0:qty!==""&&Number.isSafeInteger(Number(qty))&&Number(qty)>0&&Number(qty)<=max);
   return <Modal title="Update stock count" sub="Enter the actual quantity counted. Every update is saved in stock history." close={close}>
-    <form onSubmit={e=>{e.preventDefault();action("/adjustments","POST",{pid:Number(pid),change,reason},"Stock count updated.","history");}}>
+    <form onSubmit={e=>{e.preventDefault();action(mode==="count"?"/adjustments":"/quarantine","POST",mode==="count"?{pid:Number(pid),change,reason}:{pid:Number(pid),mode,qty:Number(qty),reason},"Stock updated and audited.",go);}}>
       <label>Item</label><select required value={pid} onChange={e=>{const id=Number(e.target.value);setPid(id);setTarget(one(d.products,id)?.stock??"");}}>{active(d.products).map(p=><option key={p.id} value={p.id}>{p.name} · {p.sku||"No code"}</option>)}</select>
-      <div className="notice"><Package size={18}/> Current stock: <strong>{selected?.stock||0}</strong></div>
-      <label>New stock count *</label><input required autoFocus type="number" min="0" step="1" value={target} onChange={e=>setTarget(e.target.value)} placeholder="Enter the quantity physically counted"/>
-      {target!==""&&<p className="mute">This will {change>=0?"add":"remove"} <strong>{Math.abs(change)}</strong>.</p>}
+      <div className="notice"><Package size={18}/> Available: <strong>{selected?.stock||0}</strong> · Quarantined: <strong>{selected?.damagedStock||0}</strong></div>
+      <label>Action</label><select value={mode} onChange={e=>{setMode(e.target.value);setQty("");}}><option value="count">Correct available stock count</option><option value="hold">Move available goods to quarantine</option><option value="release">Release inspected goods to available stock</option><option value="dispose">Dispose of quarantined goods</option></select>
+      {mode==="count"?<><label>New stock count *</label><input required autoFocus type="number" min="0" step="1" value={target} onChange={e=>setTarget(e.target.value)} placeholder="Enter the quantity physically counted"/>
+      {target!==""&&<p className="mute">This will {change>=0?"add":"remove"} <strong>{Math.abs(change)}</strong>.</p>}</>:<><label>Quantity *</label><input required type="number" min="1" max={max} step="1" value={qty} onChange={e=>setQty(e.target.value)}/><p className="mute">Maximum: {max}. Confirm physical inspection or disposal before saving.</p></>}
       <label>Reason for update *</label><textarea required rows={3} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Example: Physical stock count on factory floor"/>
-      <Controls busy={busy} close={close} valid={!!pid&&target!==""&&Number.isInteger(Number(target))&&Number(target)>=0&&change!==0&&!!reason.trim()} label="Update stock count"/>
+      <Controls busy={busy} close={close} valid={valid} label="Save stock update"/>
     </form>
   </Modal>;
 }
@@ -949,7 +954,7 @@ function StaffForm({record,busy,close,action}) {
       {f.role==="admin"?<div className="notice"><Shield size={18}/><span><strong>Administrators have full access</strong><br/>They can manage all records, stock corrections, and user accounts.</span></div>:
         <div className="permission-panel"><div className="permission-head"><span>System module</span><span>Permission</span></div>
           {ACCESS_MODULES.map(([key,label])=><div className="permission-row" key={key}><span>{label}</span><select value={f.permissions?.[key]||"none"} onChange={e=>setPermission(key,e.target.value)}>
-            <option value="none">No access</option><option value="view">View only</option><option value="edit">View & edit</option></select></div>)}
+            <option value="none">No access</option><option value="view">View only</option>{f.role!=="viewer"&&<option value="edit">View & edit</option>}</select></div>)}
         </div>}
       {record&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Account active</label>}
       <Controls busy={busy} close={close} valid={!!f.username.trim()&&(!!record||f.password.length>=8)} label="Save staff account"/>
@@ -981,7 +986,7 @@ function DocumentView({modal,d,branch,customer,product,openProduct,close}) {
         isOrder?<div className="po-detail-table"><div className="po-detail-row po-detail-head"><strong>Item</strong><strong>Ordered</strong><strong>Sent</strong><strong>Remaining</strong><strong>Unit price</strong><strong>Amount</strong></div>
           {lines.map(l=><div className="po-detail-row" key={l.pid}><button className="product-link" onClick={()=>openProduct(l.pid)}><strong>{product(l.pid).name}</strong><small>{product(l.pid).sku||"No item code"}</small></button><span>{l.qty}</span><span>{l.dispatched||0}</span><span>{l.qty-(l.dispatched||0)}</span><span>{rs(l.price)}</span><strong>{rs(l.qty*l.price)}</strong></div>)}</div>:
         <div className={"document-table" + (!hasPrices ? " two-col" : "")}><div className="document-table-head"><strong>Item</strong><strong>Quantity</strong>{hasPrices&&<strong>Amount</strong>}</div>
-          {lines.map(l=><div className="document-table-row" key={l.pid}><button className="product-link simple" onClick={()=>openProduct(l.pid)}>{product(l.pid).name}</button><span>{l.qty}</span>{hasPrices&&<span>{rs(l.qty*l.price)}</span>}</div>)}</div>}
+          {lines.map(l=><div className="document-table-row" key={l.pid}><button className="product-link simple" onClick={()=>openProduct(l.pid)}>{product(l.pid).name}</button><span>{l.qty}</span>{hasPrices&&<span>{rs(l.qty*l.price)}</span>}{isReturn&&<small>{l.condition==="quarantine"?"Quarantined":"Sellable"}</small>}</div>)}</div>}
       {hasPrices&&<div className="order-total"><span>Total</span><strong>{rs(lines.reduce((s,l)=>s+l.qty*(isPo?l.cost:l.price),0))}</strong></div>}
       {(doc.note||isSupplierReturn)&&<section className="print-notes"><strong>{isSupplierReturn?"Return reason":"Notes"}</strong><p>{isSupplierReturn?`${String(doc.reasonType||"").replace("_"," ")}${doc.note?` — ${doc.note}`:""}`:doc.note}</p></section>}
       <section className="print-approval"><div><span>Prepared by</span><strong>{doc.by||"________________________"}</strong><small>Signature</small></div><div><span>Checked by</span><strong>________________________</strong><small>Signature</small></div><div><span>Received / Approved by</span><strong>________________________</strong><small>Signature</small></div></section>
