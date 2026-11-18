@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPOTemplate, parsePOUpload } from "../server/po-excel.js";
+import { buildPOTemplate, parsePOUpload, buildInventoryTemplate, parseInventoryUpload, inventoryHeaders } from "../server/po-excel.js";
 
 const items=[
   {id:11,sku:"HEL-001",name:"Helmet shell",unit:"pieces",cost:230.50,active:1},
@@ -42,4 +42,38 @@ test("Rejects missing/inactive product IDs and changed item codes",()=>{
 test("Rejects unrelated or very large uploads safely",()=>{
   assert.throws(()=>parsePOUpload(Buffer.from("Not an Excel file"),items),/xlsx/i);
   assert.throws(()=>parsePOUpload(Buffer.alloc(4*1024*1024+1),items),/smaller than 4 MB/);
+});
+
+
+test("Current Stock Excel retains the 11 requested columns, 500 rows, and formulas",()=>{
+  const workbook=buildInventoryTemplate([{
+    id:13,sku:"BOX-13",name:"CAMY Box",category:"Packaging",supplierName:"Supun Central",
+    unit:"pieces",stock:25,cost:75,sell:150
+  }]);
+  assert.equal(workbook.readUInt32LE(0),0x04034b50);
+  const parsed=parseInventoryUpload(workbook);
+  assert.deepEqual(parsed.errors,[]);
+  assert.deepEqual(parsed.rows,[{
+    row:2,id:13,sku:"BOX-13",name:"CAMY Box",category:"Packaging",
+    supplier:"Supun Central",unit:"pieces",qty:25,cost:75,sell:150
+  }]);
+  assert.deepEqual(inventoryHeaders,[
+    "Product ID","Item Code","Item Name","Category","Supplier / Branch","Unit",
+    "Quantity","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
+  ]);
+});
+
+test("Current Stock parser accepts a new product without ID and rejects invalid stock",()=>{
+  const item={id:"",sku:"NEW-01",name:"New product",category:"New category",
+    supplierName:"Supun Central",unit:"sets",stock:0,cost:10,sell:20};
+  const parsed=parseInventoryUpload(buildInventoryTemplate([item]));
+  assert.equal(parsed.errors.length,0);
+  assert.equal(parsed.rows[0].id,null);
+  assert.equal(parsed.rows[0].qty,0);
+  const bad=parseInventoryUpload(buildInventoryTemplate([{...item,stock:-1}]));
+  assert.match(bad.errors.join(" "),/Quantity must be/);
+  const noSku=parseInventoryUpload(buildInventoryTemplate([{...item,sku:""}]));
+  assert.match(noSku.errors.join(" "),/unique Item Code/);
+  const repeated=parseInventoryUpload(buildInventoryTemplate([item,{...item,name:"Duplicate"}]));
+  assert.match(repeated.errors.join(" "),/Duplicate Item Code/);
 });
