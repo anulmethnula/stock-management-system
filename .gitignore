@@ -8,5 +8,7 @@ database/*.db-wal
 .env.*
 .DS_Store
 *.log
+*.zip
+.stockeasy-deploy-stage/
 
 # Note: already-tracked files stay tracked until explicitly removed with git rm --cached.
