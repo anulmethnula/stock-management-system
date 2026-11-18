@@ -856,6 +856,23 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
 function MovementForm({title,type,doc,d,close,busy,action}) {
   const isGRN=type==="grn",isReturn=type==="return",isDispatch=!isGRN&&!isReturn;
   const [q,setQ]=useState({}),[by,setBy]=useState(""),[note,setNote]=useState(""),[conditions,setConditions]=useState({});
+  const [importing,setImporting]=useState(false),[importError,setImportError]=useState(""),[importInfo,setImportInfo]=useState("");
+  const onReceiveExcel=async event=>{
+    const file=event.target.files?.[0];event.target.value="";
+    if(!file)return;
+    setImportError("");setImportInfo("");
+    if(!file.name.toLowerCase().endsWith(".xlsx")){setImportError("Select a GRN .xlsx file.");return;}
+    if(file.size>4*1024*1024){setImportError("Maximum GRN Excel size is 4 MB.");return;}
+    setImporting(true);
+    try{
+      const res=await fetch("/api/pos/"+doc.n+"/grn-import",{method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:file});
+      const data=await res.json();
+      if(!res.ok)throw Error(data.error||"Excel validation failed.");
+      setQ(Object.fromEntries(data.lines.map(l=>[l.pid,l.qty])));
+      setImportInfo(data.count+" items / "+data.total+" units loaded. Review below, then save GRN.");
+    }catch(e){setImportError(e.message);}finally{setImporting(false);}
+  };
   const existing=doc.items||doc.lines;
   const options=existing.map(l=>{
     const p=one(d.products,l.pid);
@@ -879,7 +896,19 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
   return <Modal wide className={isGRN?"grn-receive-modal":isDispatch?"grn-receive-modal dispatch-modal":""} title={title} sub={hint} close={close}>
     <form onSubmit={handle}>
       <div className="notice"><Info size={19}/> {isGRN?"From PO":isReturn?"From delivery":"From customer order"}: <strong>{doc.id}</strong></div>
-      {isGRN?<><div className="grn-bulk-actions"><button className="btn" type="button" onClick={receiveAll} disabled={!options.some(l=>l.max>0)}><PackageCheck size={17}/> Receive All</button><button className="btn ghost" type="button" onClick={resetQuantities} disabled={!lines.length}><RotateCcw size={16}/> Reset Quantities</button><span>Fill remaining quantities, then review before saving.</span></div>
+      {isGRN?<><div className="po-excel" style={{margin:"12px 0"}}>
+        <div className="po-excel-heading"><span className="po-excel-symbol"><Download size={20}/></span>
+          <div><strong>Receiving many PO items?</strong><small>Download this PO's GRN sheet, enter actual received quantities, and upload to review.</small></div></div>
+        <div className="po-excel-actions">
+          <a className="btn ghost sm" href={"/api/pos/"+doc.n+"/grn-template"} download={"StockEasy_"+doc.id+"_GRN.xlsx"}><Download size={16}/> Download GRN Excel</a>
+          <label className={"btn sm po-excel-upload"+(importing?" disabled":"")}><Upload size={16}/>{importing?"Checking Excel…":"Upload GRN Excel"}
+            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden disabled={importing||busy} onChange={onReceiveExcel}/>
+          </label>
+        </div>
+        <p className="po-excel-help">Enter <strong>Receive Now</strong> in column I. Upload only fills the quantities below. Stock changes <strong>after Save GRN</strong>, not on upload.</p>
+        {importError&&<div className="po-excel-error" role="alert"><AlertTriangle size={17}/>{importError}</div>}
+        {importInfo&&<div className="po-excel-success" role="status"><Check size={17}/>{importInfo}</div>}
+      </div><div className="grn-bulk-actions"><button className="btn" type="button" onClick={receiveAll} disabled={!options.some(l=>l.max>0)}><PackageCheck size={17}/> Receive All</button><button className="btn ghost" type="button" onClick={resetQuantities} disabled={!lines.length}><RotateCcw size={16}/> Reset Quantities</button><span>Fill remaining quantities, then review before saving.</span></div>
       <div className="grn-entry-table"><div className="grn-entry-row grn-entry-head"><span>Item</span><span>Ordered</span><span>Received</span><span>Still expected</span><span>Receive now</span><span>Stock after</span></div>
         {options.map(l=>{const receive=number(q[l.pid]);return <div className="grn-entry-row" key={l.pid}>
           <div className="inventory-item"><Picture p={l.p}/><span><strong>{l.p?.name}</strong><small>{l.p?.sku||"No item code"}</small></span></div>
@@ -903,7 +932,7 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
       {!isReturn&&<><label>{isGRN?"Received by":"Sent by"}</label><input value={by} onChange={e=>setBy(e.target.value)} placeholder="Your name (optional — login name is used if empty)"/></>}
       <label>{isReturn?"Why are the goods being returned? *":"Notes (optional)"}</label>
       <textarea rows={isGRN?2:3} required={isReturn} value={note} onChange={e=>setNote(e.target.value)} placeholder={isReturn?"Example: Damaged or extra goods":"Optional delivery notes"}/>
-      {isDispatch?<div className="dispatch-sticky-actions"><div><strong>{lines.length}</strong> selected · <strong>{selectedTotal}</strong> units</div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!lines.length}><Truck size={17}/>{busy?"Saving…":"Create Delivery"}</button></div></div>:<Controls busy={busy} close={close} valid={lines.length>0&&(!isReturn||!!note.trim())} label={label}/>} 
+      {isDispatch?<div className="dispatch-sticky-actions"><div><strong>{lines.length}</strong> selected · <strong>{selectedTotal}</strong> units</div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!lines.length}><Truck size={17}/>{busy?"Saving…":"Create Delivery"}</button></div></div>:<Controls busy={busy||importing} close={close} valid={lines.length>0&&(!isReturn||!!note.trim())} label={label}/>} 
     </form>
   </Modal>;
 }
