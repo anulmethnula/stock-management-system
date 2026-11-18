@@ -17,6 +17,8 @@ export function registerInventoryImportRoutes(app,h){
   const toPreview=p=>({
     row:p.row,action:p.action,id:p.id||null,sku:p.sku,name:p.name,category:p.category,
     supplier:p.supplier,unit:p.unit,qty:p.qty,oldStock:p.previous?.stock??null,
+    oldName:p.previous?.name??null,oldCategory:p.previous?.category??null,
+    oldCost:p.previous?.cost??null,oldSell:p.previous?.sell??null,
     delta:p.qty-(p.previous?.stock||0),cost:p.cost,sell:p.sell
   });
   const authorize=requireEdit("products"),authorizeStock=requireEdit("stock_adjustments");
@@ -124,7 +126,7 @@ export function registerInventoryImportRoutes(app,h){
     const created=changed.filter(p=>p.action==="new").length,updated=changed.length-created;
     const delta=changed.reduce((n,p)=>n+p.qty-(p.previous?.stock||0),0);
     const batchId=db.prepare("INSERT INTO inventory_import_batches(fingerprint,staff_id,new_count,updated_count,stock_delta,details_json) VALUES(?,?,?,?,?,?)")
-      .run(preview.fingerprint,req.user.id,created,updated,delta,JSON.stringify(changed.map(toPreview))).lastInsertRowid;
+      .run(preview.fingerprint,req.user.id,created,updated,delta,JSON.stringify(changed.map(p=>({...toPreview(p),before:p.previous})))).lastInsertRowid;
     const reference="BULK-"+String(batchId).padStart(4,"0");
     const ensureCategory=db.prepare("SELECT id,name,active FROM product_categories WHERE name=? COLLATE NOCASE");
     for(const item of changed){
