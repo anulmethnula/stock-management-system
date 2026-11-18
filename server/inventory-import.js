@@ -42,7 +42,9 @@ export function registerInventoryImportRoutes(app,h){
     express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
     run(req=>{
       check(Buffer.isBuffer(req.body)&&req.body.length,"Upload an Excel .xlsx file.",400);
-      const {rows,errors}=parseInventoryUpload(req.body);
+      let rows,errors;
+      try{({rows,errors}=parseInventoryUpload(req.body));}
+      catch(e){e.status=422;throw e;}
       const products=db.prepare("SELECT * FROM products").all(),suppliers=db.prepare("SELECT * FROM suppliers").all(),categories=db.prepare("SELECT * FROM product_categories").all();
       const byId=new Map(products.map(p=>[p.id,p]));
       const bySku=new Map();
