@@ -80,3 +80,37 @@ Use a local database or a separate test environment for development and testing.
 - Upload the sheet and review items before saving. Uploading does not create a PO until Save, and saving a PO **never changes current stock**. Stock increases only when actual GRN receipt is saved.
 - Do not upload the 11-column Inventory Migration file into the PO importer; that file sets absolute physical stock counts and is handled under Items.
 - PO import checks IDs, item codes and product details, rejects repeated products/invalid amounts, and supports at most **200 distinct items** per PO. If the catalogue changes, download a fresh PO template.
+
+
+## Final workflow hardening (November 2026)
+
+### Bulk Items migration
+- Items → Bulk Upload Excel → Download template → Fill → Upload & Preview → Confirm.
+- Detects when two spreadsheet rows map to the **same existing product**, even if one matches by Product ID and the other by Item Code. No changes are committed while errors exist.
+- Items absent from an Excel file are **kept automatically**. When using a verified **complete** product list, staff can deliberately tick **Archive eligible missing items** in the preview. Only zero-stock, non-quarantined products with **no open PO, customer order or quotation** can be archived. The list is reviewed and audited; a partial update must never enable this option.
+- A bulk stock count sets the **final** on-hand available quantity; it is not added to existing stock.
+
+### Three different Excel operations
+| Process | Purpose | When stock changes |
+| --- | --- | --- |
+| Items → Bulk Upload | New/updated items, current physical stock | After explicit migration confirmation, as a final count |
+| Create PO → Download/Upload PO Excel | Request quantities from a supplier | **Not** when PO is saved |
+| Receive PO → Download/Upload GRN Excel | Confirm actual received quantities | **Only when Save GRN is clicked** |
+
+- GRN template is specific to the selected active PO and its current unreceived quantities. Fill **Receive Now (column I)**, upload, review and click Save GRN.
+- An old GRN sheet is rejected when quantities or item details have changed. Partial receiving and Receive All still work.
+- Stock reports calculate historical balances using SQL. Movement history is paged in 200-row groups. Downloaded reports are **real .xlsx files**, not HTML disguised as Excel.
+- A movement-history export exceeding 50,000 rows asks for a narrower date range. Browser screens do not load the full movement ledger at login.
+
+### Protect the live StockEasy domain with HTTPS
+
+The app is a **Node/Express + SQLite server**. GitHub updates cannot, by themselves, install a certificate on your existing VPS. If StockEasy is hosted on your own Linux VPS, this repository provides `deploy/Caddyfile` as a Caddy automatic-HTTPS reverse-proxy example for `stock.supuncompanies.com`.
+
+1. **Back up** your live `database/stockeasy.db` and existing server/proxy configuration before changing anything. Do not replace the live SQLite database with a local/test database.
+2. Confirm the DNS A/AAAA records for `stock.supuncompanies.com` point to the public VPS, and that inbound TCP ports **80 and 443** reach it. If Nginx/Apache already manages the site, configure HTTPS there instead of running two proxies.
+3. Install **Caddy** on the VPS if no proxy already handles HTTPS; use `deploy/Caddyfile` as `/etc/caddy/Caddyfile` after checking the configuration. Caddy obtains and renews TLS certificates automatically when DNS and port access are correct. Do not point Caddy at a public Node listener.
+4. Run the app behind Caddy, bound **only to loopback**, with `STOCKEASY_HOST=127.0.0.1`, `PORT=3001`, `COOKIE_SECURE=1`, and `REQUIRE_HTTPS=1`. Use a system service, not a terminal session.
+5. Test `https://stock.supuncompanies.com` for a valid padlock, `http://stock.supuncompanies.com` for an HTTPS redirect, and confirm login, uploads and downloads after TLS is enabled.
+6. Never expose backend port 3001 publicly or put session tokens/admin passwords into source control. Store the live database persistently and back it up regularly.
+
+**Important:** TLS is not considered fixed on the public website until the VPS proxy is configured and a real browser connection verifies the certificate. Code changes alone cannot make the currently insecure URL secure.
