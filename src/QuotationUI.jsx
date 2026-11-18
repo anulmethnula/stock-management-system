@@ -52,7 +52,7 @@ export function QuotationPage({d,customer,canEdit,user,setModal,action}){
         {visible.map(q=><div className="quote-table-row" key={q.n}>
           <div className="quote-ref"><strong>{q.id}</strong><small>{q.date}</small></div>
           <div className="quote-company"><strong>{q.customerName}</strong></div>
-          <div className="quote-lines"><strong>{q.items.length} item{q.items.length===1?"":"s"} · {q.items.reduce((n,l)=>n+l.qty,0)} units</strong><small>{q.items.slice(0,2).map(x=>x.name).join(", ")}{q.items.length>2?" +more":""}</small></div>
+          <div className="quote-lines"><strong>{q.items.length} item{q.items.length===1?"":"s"} · {q.items.reduce((n,l)=>n+l.qty,0)}</strong><small>{q.items.slice(0,2).map(x=>x.name).join(", ")}{q.items.length>2?" +more":""}</small></div>
           <div className="quote-money">{money(total(q))}</div><div className="quote-valid">{q.validUntil}</div>
           <div><Status q={q}/></div>
           <div className="quote-actions">
@@ -94,7 +94,7 @@ export function QuotationForm({record,d,close,busy,action}){
       <div className="quote-item-table">
         <div className="quote-item-row quote-item-head"><span>Item</span><span>Qty</span><span>Price / unit (Rs)</span><span>Amount</span></div>
         {products.map(p=>{const n=Number(qty[p.id]||0),price=Number(prices[p.id]??p.sell);return <div className="quote-item-row" key={p.id}>
-          <div className="quote-item-name"><span className="quote-item-picture">{p.img?<img alt="" src={p.img}/>:p.emoji||"📦"}</span><span><strong>{p.name}</strong><small>{p.sku||p.unit} · {p.stock} in stock</small></span></div>
+          <div className="quote-item-name"><span className="quote-item-picture">{p.img?<img alt="" src={p.img}/>:p.emoji||"📦"}</span><span><strong>{p.name}</strong><small>{p.sku||"No item code"} · {p.stock} in stock</small></span></div>
           <input type="number" min="0" max="100000000" step="1" aria-label={"Quantity for "+p.name} value={n} onChange={e=>setQty(v=>({...v,[p.id]:Math.max(0,Math.floor(Number(e.target.value)||0))}))}/>
           <input type="number" min="0" step=".01" max="1000000000000" aria-label={"Unit price for "+p.name} value={prices[p.id]??p.sell} onChange={e=>setPrices(v=>({...v,[p.id]:e.target.value}))}/>
           <strong>{n?money(n*price):"—"}</strong>
@@ -133,7 +133,7 @@ export function QuotationView({record,d,close}){
       <section className="print-document-meta"><div><span>Customer</span><strong>{record.customerName}</strong></div><div><span>Quotation date</span><strong>{record.date}</strong></div><div><span>Valid until</span><strong>{record.validUntil}</strong></div><div><span>Total items</span><strong>{record.items.length}</strong></div></section>
       {(record.customerAddress||customer?.phone)&&<section className="quote-customer-meta">{record.customerAddress&&<span>Address: {record.customerAddress}</span>}{customer?.phone&&<span>Contact: {customer.phone}</span>}</section>}
       <div className="print-section-title"><span>Quoted items</span><small>Quantities and prices as offered</small></div>
-      <table className="quote-print-table"><thead><tr><th>Item / Code</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>{record.items.map(l=><tr key={l.pid}><td><strong>{l.name}</strong><small>{l.sku}</small></td><td>{l.qty} {l.unit}</td><td>{money(l.price)}</td><td><strong>{money(l.qty*l.price)}</strong></td></tr>)}</tbody></table>
+      <table className="quote-print-table"><thead><tr><th>Item / Code</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>{record.items.map(l=><tr key={l.pid}><td><strong>{l.name}</strong><small>{l.sku}</small></td><td>{l.qty}</td><td>{money(l.price)}</td><td><strong>{money(l.qty*l.price)}</strong></td></tr>)}</tbody></table>
       <div className="order-total"><span>Total quotation value</span><strong>{money(total(record))}</strong></div>
       {record.note&&<section className="print-notes"><strong>Terms / Notes</strong><p>{record.note}</p></section>}
       {order&&<section className="quote-converted"><ClipboardCheck size={16}/> Converted to customer order <strong>{order.id}</strong></section>}
