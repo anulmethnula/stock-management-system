@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPOTemplate, parsePOUpload, buildInventoryTemplate, parseInventoryUpload, inventoryHeaders, poHeaders } from "../server/po-excel.js";
+import { buildPOTemplate, parsePOUpload, buildInventoryTemplate, parseInventoryUpload, inventoryHeaders, poHeaders, buildGRNTemplate, parseGRNUpload, buildTableWorkbook } from "../server/po-excel.js";
 
 const items=[
   {id:11,sku:"HEL-001",name:"Helmet shell",category:"Safety Equipment",supplierName:"Supun Main",unit:"pieces",stock:80,cost:230.50,active:1},
@@ -112,4 +112,36 @@ test("PO import rejects changed catalog details, while stock reference is inform
   assert.throws(()=>parsePOUpload(modified,items),/Item details/);
   const valid=buildPOTemplate([{...items[0],stock:999,supplierName:"Different supplier"}],{11:2});
   assert.equal(parsePOUpload(valid,items)[0].qty,2);
+});
+
+
+test("GRN workbook is PO-specific, imported quantities are validated and stock is untouched",()=>{
+  const po={code:"PO-0008",supplierName:"Supun Central"};
+  const lines=[{id:11,sku:"HEL-001",name:"Helmet shell",category:"Safety Equipment",unit:"pieces",ordered:25,received:10},
+    {id:12,sku:"ELE-002",name:"Copper wire 2.5mm",category:"Electrical",unit:"rolls",ordered:15,received:0}];
+  const file=buildGRNTemplate(po,lines,{11:8,12:3});
+  assert.equal(file.readUInt32LE(0),0x04034b50);
+  assert.ok(file.includes(Buffer.from("Receive Now")));
+  assert.ok(file.includes(Buffer.from("How to Fill")));
+  assert.deepEqual(parseGRNUpload(file,po,lines),[{pid:11,qty:8},{pid:12,qty:3}]);
+  assert.throws(()=>parseGRNUpload(file,{code:"PO-OTHER"},lines),/changed/);
+  assert.throws(()=>parseGRNUpload(file,po,[{...lines[0],received:11},lines[1]]),/changed/);
+  assert.throws(()=>parseGRNUpload(buildGRNTemplate(po,lines,{11:16}),po,lines),/Only 15 units remain/);
+  assert.throws(()=>parseGRNUpload(buildPOTemplate(items,{11:8}),po,lines),/Wrong GRN Excel columns/);
+  assert.throws(()=>parseGRNUpload(buildGRNTemplate(po,lines),po,lines),/Enter received quantities/);
+});
+
+test("Real Excel workbook stores numeric cells, borders and escaped text safely",()=>{
+  const file=buildTableWorkbook({
+    sheetName:"Stock Report",headers:["Product","Qty","Cost"],
+    rows:[["=HYPERLINK(\"https://bad\", \"bad\")",25,19.5],["CAMY AC",0,100]],
+    guide:[["From","2026-11-01"],["To","2026-11-18"]]
+  });
+  assert.equal(file.readUInt32LE(0),0x04034b50);
+  assert.ok(file.includes(Buffer.from("HYPERLINK")));
+  assert.ok(file.includes(Buffer.from('t="inlineStr"')));
+  assert.ok(file.includes(Buffer.from('r="B2"')));
+  assert.ok(file.includes(Buffer.from("left style=")));
+  assert.ok(file.includes(Buffer.from("How to Fill")));
+  assert.throws(()=>buildTableWorkbook({headers:["A"],rows:Array.from({length:50001},()=>[1])}),/too large/);
 });

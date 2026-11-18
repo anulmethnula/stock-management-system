@@ -5,17 +5,24 @@ import os from "os";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import db, { createDatabaseBackup, passwordHash, passwordMatches } from "./db.js";
-import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
+import { buildPOTemplate, parsePOUpload, buildGRNTemplate, parseGRNUpload } from "./po-excel.js";
+import { registerReportingRoutes } from "./reporting.js";
 import { registerInventoryImportRoutes } from "./inventory-import.js";
 import { registerQuotationRoutes } from "./quotations.js";
 
 const app = express();
 app.disable("x-powered-by");
+// Trust only a reverse proxy on the local machine (e.g. Caddy on the VPS).
+app.set("trust proxy","loopback");
 app.use(express.json({ limit: "8mb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
+  if(req.secure)res.setHeader("Strict-Transport-Security","max-age=31536000");
+  if(process.env.REQUIRE_HTTPS==="1"&&!req.secure){
+    res.status(426).json({error:"HTTPS is required. Open https://stock.supuncompanies.com instead."});return;
+  }
   next();
 });
 const today = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -100,7 +107,7 @@ app.post("/api/login", (req, res) => {
     db.prepare("INSERT INTO sessions(token_hash,staff_id,expires_at) VALUES(?,?,?)")
       .run(tokenHash(token), user.id, Date.now() + maxAge);
     res.cookie(cookieName, token, {
-      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge
+      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1" || req.secure, maxAge
     });
     res.json({ user: publicUser(user) });
   } catch (e) {
@@ -159,11 +166,12 @@ app.get("/api/all", run(req => {
     deliveries: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
       .map(d => ({ ...d, lines: deliveryLines.filter(l => l.delivery_id === d.n) }))
       : [],
-    returns: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
+    returns: canSee("deliveries","reports") ? db.prepare("SELECT r.id n,r.code id,r.delivery_id deliveryN,r.customer_id cid,r.date,r.note,r.status,(SELECT m.actor FROM stock_movements m WHERE m.reference=r.code AND m.event_type=\'Customer return\' LIMIT 1) byName FROM customer_returns r ORDER BY r.id DESC").all()
       .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
       : [],
     movements: canSee("stock_history","reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : [],
-    reportMovements: canSee("reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id").all() : [],
+    // Historical reports now request SQL aggregates or paginated movements separately.
+    reportMovements: [],
     dashboardChart: canSee("dashboard") ? db.prepare("SELECT date("+localAt+") day, SUM(CASE WHEN event_type IN ('Goods received','GRN reversed') THEN qty_change ELSE 0 END) received, SUM(CASE WHEN event_type IN ('Delivered to customer','Delivery reversed') THEN -qty_change ELSE 0 END) delivered FROM stock_movements WHERE created_at>=datetime('now','-12 months','-2 days') GROUP BY day ORDER BY day").all() : [],
     dashboardCounts: canSee("dashboard") ? {
       items:db.prepare("SELECT COUNT(*) n FROM products WHERE active=1").get().n,
@@ -398,6 +406,31 @@ app.delete("/api/pos/:id", requireEdit("purchase_orders"), run(req => {
   db.prepare("UPDATE purchase_orders SET status=? WHERE id=?").run(n ? "Part cancelled" : "Cancelled", po.id);
   return { ok: true };
 }));
+// GRN Excel is only a prepared selection. The normal Save GRN API remains
+// the only place that increases real inventory.
+const grnExcelLines=poId=>db.prepare("SELECT p.id,p.sku,p.name,p.category,p.unit,li.qty ordered,li.received FROM po_items li JOIN products p ON p.id=li.product_id WHERE li.po_id=? ORDER BY p.category COLLATE NOCASE,p.name COLLATE NOCASE").all(poId);
+app.get("/api/pos/:id/grn-template",requireEdit("goods_received"),(req,res)=>{
+  try {
+    const po=find("purchase_orders",req.params.id);
+    check(["Ordered","Part received"].includes(po.status),"This PO is not open for receiving.",409);
+    const supplier=find("suppliers",po.supplier_id);
+    const buffer=buildGRNTemplate({code:po.code,supplierName:supplier.name},grnExcelLines(po.id));
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",'attachment; filename="StockEasy_'+po.code+'_GRN.xlsx"');
+    res.setHeader("Cache-Control","no-store");res.send(buffer);
+  }catch(e){res.status(e.status||500).json({error:e.status?e.message:"Could not create the GRN template."});}
+});
+app.post("/api/pos/:id/grn-import",requireEdit("goods_received"),
+  express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
+  run(req=>{
+    const po=find("purchase_orders",req.params.id);
+    check(["Ordered","Part received"].includes(po.status),"This PO is not open for receiving.",409);
+    check(Buffer.isBuffer(req.body)&&req.body.length>0,"Upload a GRN .xlsx file.");
+    let lines;try{lines=parseGRNUpload(req.body,po,grnExcelLines(po.id));}
+    catch(e){e.status=e.status||422;throw e;}
+    return {poCode:po.code,lines,count:lines.length,total:lines.reduce((n,l)=>n+l.qty,0)};
+  })
+);
 app.post("/api/pos/:id/receive", requireEdit("goods_received"), run(req => transaction(() => {
   const po = find("purchase_orders", req.params.id);
   check(["Ordered","Part received"].includes(po.status), "This purchase order is not open.", 409);
@@ -613,6 +646,7 @@ app.post("/api/quarantine",requireEdit("stock_adjustments"),run(req=>transaction
 })));
 
  registerInventoryImportRoutes(app,{db,express,requireEdit,run,transaction,check,changeStock,logStock});
+ registerReportingRoutes(app,{db,express,check,cleanPermissions,movementFields});
 // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
 app.get("/api/admin/database-backup",admin,(req,res)=>{
   const stamp=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date()).replaceAll(":","-").replace(" ","_");

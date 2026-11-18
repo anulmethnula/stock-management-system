@@ -21,6 +21,16 @@ export function registerInventoryImportRoutes(app,h){
     oldCost:p.previous?.cost??null,oldSell:p.previous?.sell??null,
     delta:p.qty-(p.previous?.stock||0),cost:p.cost,sell:p.sell
   });
+  const archiveReason=p=>{
+    if(p.stock>0||p.damaged_stock>0)return "Stock must be zero (including quarantined stock)";
+    const openPO=db.prepare("SELECT 1 FROM po_items pi JOIN purchase_orders po ON po.id=pi.po_id WHERE pi.product_id=? AND pi.received<pi.qty AND po.status IN ('Ordered','Part received') LIMIT 1").get(p.id);
+    if(openPO)return "Item has outstanding purchase orders";
+    const openOrder=db.prepare("SELECT 1 FROM customer_order_items li JOIN customer_orders co ON co.id=li.order_id WHERE li.product_id=? AND li.dispatched<li.qty AND co.status IN ('Open','Part dispatched') LIMIT 1").get(p.id);
+    if(openOrder)return "Item has outstanding customer orders";
+    const openQuotation=db.prepare("SELECT 1 FROM quotation_items li JOIN customer_quotations q ON q.id=li.quotation_id WHERE li.product_id=? AND q.status IN ('Draft','Sent','Approved') LIMIT 1").get(p.id);
+    if(openQuotation)return "Item belongs to an open quotation";
+    return null;
+  };
   const authorize=requireEdit("products"),authorizeStock=requireEdit("stock_adjustments");
   app.get("/api/inventory-template",authorize,run(req=>{
     const list=db.prepare("SELECT p.id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
@@ -53,7 +63,7 @@ export function registerInventoryImportRoutes(app,h){
         if(!bySku.has(key))bySku.set(key,[]);
         bySku.get(key).push(p);
       }
-      const plan=[],newCategories=new Set(),canonicalCategories=new Map(categories.map(c=>[normalize(c.name),c.name]));
+      const plan=[],seenProducts=new Map(),newCategories=new Set(),canonicalCategories=new Map(categories.map(c=>[normalize(c.name),c.name]));
       for(const row of rows){
         const matches=suppliers.filter(s=>normalize(s.name)===normalize(row.supplier));
         if(matches.length!==1||!matches[0].active){
@@ -65,6 +75,13 @@ export function registerInventoryImportRoutes(app,h){
         if(skuMatches.length>1){errors.push("Row "+row.row+": Existing Item Code '"+row.sku+"' is duplicated in StockEasy. Resolve it first.");continue;}
         if(row.id&&skuMatches.length&&skuMatches[0].id!==row.id){errors.push("Row "+row.row+": Product ID and Item Code belong to different products.");continue;}
         const p=matchById||skuMatches[0]||null;
+        // Different Excel rows can still refer to the SAME saved product via
+        // Product ID on one row and Item Code on another. Never apply both.
+        if(p&&seenProducts.has(p.id)){
+          errors.push("Row "+row.row+": This is the same saved item as row "+seenProducts.get(p.id)+" (Product ID "+p.id+"). Remove the duplicate row.");
+          continue;
+        }
+        if(p)seenProducts.set(p.id,row.row);
         if(!p){
           const sameName=products.find(x=>normalize(x.name)===normalize(row.name)&&x.supplier_id===matches[0].id);
           if(sameName){errors.push("Row "+row.row+": '"+row.name+"' already exists for this supplier with a different item code. Use its correct Product ID or Item Code.");continue;}
@@ -80,11 +97,15 @@ export function registerInventoryImportRoutes(app,h){
         const action=!p?"new":changed?"update":"unchanged";
         plan.push({...row,category:categoryName,id:p?.id||null,previous,sid:matches[0].id,action});
       }
+      const missing=products.filter(p=>p.active===1&&!seenProducts.has(p.id)).map(p=>{
+        const reason=archiveReason(p);
+        return {id:p.id,name:p.name,sku:p.sku||"",stock:p.stock,damagedStock:p.damaged_stock,eligible:!reason,reason,previous:snapshot(p)};
+      });
       // Fingerprint includes the *current* stock snapshot. A deliberate future
       // physical recount may legitimately match an old Excel quantity after GRNs.
       // Immediate repeats are no-ops, while identical preview commits are once-only.
       const fingerprint=crypto.createHash("sha256")
-        .update(JSON.stringify({rows,baseline:plan.map(x=>x.previous)})).digest("hex");
+        .update(JSON.stringify({rows,baseline:plan.map(x=>x.previous),missing:missing.map(x=>x.previous)})).digest("hex");
       const duplicate=db.prepare("SELECT id FROM inventory_import_batches WHERE fingerprint=?").get(fingerprint);
       if(duplicate)errors.push("This exact inventory data has already been imported (batch #"+duplicate.id+"). Download a fresh template for another update.");
       const summary={
@@ -92,16 +113,17 @@ export function registerInventoryImportRoutes(app,h){
         updateCount:plan.filter(x=>x.action==="update").length,
         unchangedCount:plan.filter(x=>x.action==="unchanged").length,
         categoryCount:newCategories.size,categories:[...newCategories],
+        missingCount:missing.length,archiveEligible:missing.filter(x=>x.eligible).length,archiveBlocked:missing.filter(x=>!x.eligible).length,
         totalQty:plan.reduce((n,x)=>n+x.qty,0),stockDelta:plan.reduce((n,x)=>n+x.qty-(x.previous?.stock||0),0)
       };
       let token=null;
-      if(!errors.length&&summary.newCount+summary.updateCount>0){
+      if(!errors.length&&summary.newCount+summary.updateCount+summary.archiveEligible>0){
         token=crypto.randomBytes(24).toString("hex");
         db.prepare("DELETE FROM inventory_import_previews WHERE expires_at<?").run(Date.now());
         db.prepare("INSERT INTO inventory_import_previews(token,staff_id,fingerprint,plan_json,expires_at) VALUES(?,?,?,?,?)")
-          .run(token,req.user.id,fingerprint,JSON.stringify(plan),Date.now()+20*60*1000);
+          .run(token,req.user.id,fingerprint,JSON.stringify({items:plan,missing}),Date.now()+20*60*1000);
       }else if(!errors.length)errors.push("All values already match current StockEasy records. No changes to import.");
-      return {token,summary,rows:plan.map(toPreview),errors,canCommit:!!token};
+      return {token,summary,rows:plan.map(toPreview),missing:missing.map(({previous,...rest})=>rest),errors,canCommit:!!token};
     })
   );
   app.post("/api/inventory-import/commit",authorize,authorizeStock,run(req=>transaction(()=>{
@@ -112,8 +134,12 @@ export function registerInventoryImportRoutes(app,h){
     check(preview&&preview.expires_at>Date.now(),"Upload preview has expired. Upload the file again.",409);
     check(!db.prepare("SELECT 1 FROM inventory_import_batches WHERE fingerprint=?").get(preview.fingerprint),
       "This Excel data has already been imported. Upload a new file.",409);
-    const plan=JSON.parse(preview.plan_json);
-    check(plan.length>0,"No items to import.");
+    const {items:plan,missing=[]}=JSON.parse(preview.plan_json);
+    const archiveMissing=req.body?.archiveMissing===true;
+    check(plan.length>0||archiveMissing&&missing.length>0,"No items to import.");
+    check(!archiveMissing||missing.some(p=>p.eligible),"No eligible missing items can be archived.",409);
+    check(plan.some(p=>p.action!=="unchanged")||archiveMissing,
+      "No changes selected. Confirm the safe archive option or upload changed rows.",400);
     // Re-check the entire preview within the same SQL transaction before any write.
     for(const item of plan){
       if(item.previous){
@@ -130,11 +156,20 @@ export function registerInventoryImportRoutes(app,h){
       check(supplier&&supplier.active===1&&normalize(supplier.name)===normalize(item.supplier),
         "A supplier has changed since preview. Upload again.",409);
     }
+    if(archiveMissing){
+      for(const item of missing.filter(x=>x.eligible)){
+        const product=readProduct(item.id);
+        check(JSON.stringify(snapshot(product))===JSON.stringify(item.previous)
+          &&product.active===1&&!archiveReason(product),
+          "Missing item "+item.name+" has changed or is now needed by an open document. Upload and preview again.",409);
+      }
+    }
     const changed=plan.filter(p=>p.action!=="unchanged");
     const created=changed.filter(p=>p.action==="new").length,updated=changed.length-created;
     const delta=changed.reduce((n,p)=>n+p.qty-(p.previous?.stock||0),0);
+    const archived=archiveMissing?missing.filter(x=>x.eligible):[];
     const batchId=db.prepare("INSERT INTO inventory_import_batches(fingerprint,staff_id,new_count,updated_count,stock_delta,details_json) VALUES(?,?,?,?,?,?)")
-      .run(preview.fingerprint,req.user.id,created,updated,delta,JSON.stringify(changed.map(p=>({...toPreview(p),before:p.previous})))).lastInsertRowid;
+      .run(preview.fingerprint,req.user.id,created,updated,delta,JSON.stringify([...changed.map(p=>({...toPreview(p),before:p.previous})),...archived.map(p=>({id:p.id,name:p.name,action:"archive",before:p.previous}))])).lastInsertRowid;
     const reference="BULK-"+String(batchId).padStart(4,"0");
     const ensureCategory=db.prepare("SELECT id,name,active FROM product_categories WHERE name=? COLLATE NOCASE");
     for(const item of changed){
@@ -153,6 +188,10 @@ export function registerInventoryImportRoutes(app,h){
           "Reviewed Excel final quantity "+item.qty+"; previous "+item.previous.stock,req.user.username);}
       }
     }
+    for(const item of archived){
+      db.prepare("UPDATE products SET active=0 WHERE id=?").run(item.id);
+      logStock(item.id,0,"Item archived",reference,"Explicitly archived because item was missing from an approved complete inventory list",req.user.username);
+    }
     // Hide unused factory demo categories, but never remove categories still in use.
     for(const category of ["Helmets","Electrical","Safety gear","Raw materials","Packaging","Tools","Other"]){
       const existing=ensureCategory.get(category);
@@ -160,6 +199,6 @@ export function registerInventoryImportRoutes(app,h){
         db.prepare("UPDATE product_categories SET active=0 WHERE id=?").run(existing.id);
     }
     db.prepare("DELETE FROM inventory_import_previews WHERE token=?").run(token);
-    return {ok:true,code:reference,created,updated,stockDelta:delta};
+    return {ok:true,code:reference,created,updated,archived:archived.length,stockDelta:delta};
   })));
 }

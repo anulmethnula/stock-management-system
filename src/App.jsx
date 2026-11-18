@@ -546,6 +546,7 @@ const REPORT_TYPES = [
   ["quotations","Customer Quotations Report",FileText],["deliveries","Deliveries Report",Truck],["customerReturn","Customer Returns Report",RotateCcw],["movement","Stock Movement History Report",History],["suppliers","Suppliers / Branches Report",Building2],["customers","Customer Companies Report",Users]
 ];
 function Reports({d,branch,customer,product}) {
+  const [movementPage,setMovementPage]=useState(1),[reportLoading,setReportLoading]=useState(false),[reportError,setReportError]=useState("");
   const iso=date=>[date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("-");
   const periodRange=period=>{const now=businessNow(),start=new Date(now.getFullYear(),now.getMonth(),now.getDate()),end=new Date(start);if(period==="today"){}else if(period==="yesterday"){start.setDate(start.getDate()-1);end.setTime(start.getTime());}else if(period==="thisWeek"){start.setDate(start.getDate()-((start.getDay()+6)%7));}else if(period==="thisMonth"){start.setDate(1);}else if(period==="lastMonth"){start.setMonth(start.getMonth()-1,1);end.setDate(0);}else if(period==="thisYear"){start.setMonth(0,1);}else return {from:"",to:""};return {from:iso(start),to:iso(end)};};
   const blankFilters=()=>({from:"",to:"",period:"all",sid:"all",cid:"all",pid:"all",status:"all"});
@@ -558,6 +559,7 @@ function Reports({d,branch,customer,product}) {
   const statuses={stock:[["active","Active"],["low","Low stock"],["out","Out of stock"],["archived","Archived"]],po:[...new Set(d.pos.map(x=>x.status))].map(x=>[x,x]),grn:[...new Set(d.grns.map(x=>x.status))].map(x=>[x,x]),supplierReturn:[...new Set(d.supplierReturns.map(x=>x.status))].map(x=>[x,x]),orders:[...new Set(d.orders.map(x=>x.status))].map(x=>[x,x]),quotations:[...new Set(d.quotations.map(x=>["Sent","Approved"].includes(x.status)&&x.validUntil<colomboDate()?"Expired":x.status))].map(x=>[x,x]),deliveries:[...new Set(d.deliveries.map(x=>x.status))].map(x=>[x,x]),customerReturn:[...new Set(d.returns.map(x=>x.status))].map(x=>[x,x]),movement:["GRN","Delivery","Supplier Return","Customer Return","Quarantine","Adjustment","Reversal"].map(x=>[x,x])}[type]||[];
   const dateOk=date=>(!filters.from||String(date).slice(0,10)>=filters.from)&&(!filters.to||String(date).slice(0,10)<=filters.to),hasItem=lines=>filters.pid==="all"||lines.some(l=>l.pid===Number(filters.pid)),selectedLines=lines=>lines.filter(l=>filters.pid==="all"||l.pid===Number(filters.pid)),sumQty=lines=>selectedLines(lines).reduce((n,l)=>n+l.qty,0);
   const build=()=>{
+    if(type==="stock"||type==="movement")return; // SQL handles historical reports.
     let columns=[],rows=[],summary=[];
     if(type==="stock"){
       const movements=d.reportMovements||[],from=filters.from;
@@ -592,7 +594,7 @@ function Reports({d,branch,customer,product}) {
     } else if(type==="deliveries"){
       const docs=d.deliveries.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["Delivery","Original Order","Company","Item","Quantity","Date","Status","Recorded By"];rows=docs.flatMap(x=>selectedLines(x.lines).map(l=>[x.id,one(d.orders,x.orderN)?.id||"—",customer(x.cid).name,product(l.pid).name,l.qty,today(x.date),x.status,x.byName||"—"]));summary=[["Deliveries",docs.length],["Active delivered",docs.filter(x=>x.status==="Active").reduce((n,x)=>n+sumQty(x.lines),0)],["Reversed qty",docs.filter(x=>x.status==="Reversed").reduce((n,x)=>n+sumQty(x.lines),0)]];
     } else if(type==="customerReturn"){
-      const docs=d.returns.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["Return","Original Delivery","Company","Item","Quantity","Date","Reason","Status","Recorded By","Condition"];rows=docs.flatMap(x=>selectedLines(x.lines).map(l=>[x.id,one(d.deliveries,x.deliveryN)?.id||"—",customer(x.cid).name,product(l.pid).name,l.qty,today(x.date),x.note||"—",x.status,(d.reportMovements||[]).find(m=>m.reference===x.id)?.actor||"—",l.condition==="quarantine"?"Quarantined":"Sellable"]));summary=[["Customer returns",docs.length],["Active returned",docs.filter(x=>x.status==="Active").reduce((n,x)=>n+sumQty(x.lines),0)],["Reversed qty",docs.filter(x=>x.status==="Reversed").reduce((n,x)=>n+sumQty(x.lines),0)]];
+      const docs=d.returns.filter(x=>dateOk(x.date)&&(filters.cid==="all"||x.cid===Number(filters.cid))&&hasItem(x.lines)&&(filters.status==="all"||x.status===filters.status));columns=["Return","Original Delivery","Company","Item","Quantity","Date","Reason","Status","Recorded By","Condition"];rows=docs.flatMap(x=>selectedLines(x.lines).map(l=>[x.id,one(d.deliveries,x.deliveryN)?.id||"—",customer(x.cid).name,product(l.pid).name,l.qty,today(x.date),x.note||"—",x.status,x.byName||"—",l.condition==="quarantine"?"Quarantined":"Sellable"]));summary=[["Customer returns",docs.length],["Active returned",docs.filter(x=>x.status==="Active").reduce((n,x)=>n+sumQty(x.lines),0)],["Reversed qty",docs.filter(x=>x.status==="Reversed").reduce((n,x)=>n+sumQty(x.lines),0)]];
     } else if(type==="movement"){
       const docs=(d.reportMovements||d.movements).filter(x=>dateOk(x.at)&&(filters.pid==="all"||x.pid===Number(filters.pid))&&(filters.status==="all"||movementGroup(x.type)===filters.status));columns=["Date & Time (SL)","Item","Movement Type","Reference","Available In","Available Out","Quarantine Change","Recorded By"];rows=docs.map(x=>[x.at,product(x.pid).name,x.type,x.reference,x.qty>0?x.qty:"—",x.qty<0?Math.abs(x.qty):"—",x.damagedQty||0,x.actor]);summary=[["Movements",docs.length],["Stock in",docs.filter(x=>x.qty>0).reduce((n,x)=>n+x.qty,0)],["Stock out",Math.abs(docs.filter(x=>x.qty<0).reduce((n,x)=>n+x.qty,0))]];
     } else if(type==="suppliers"){
@@ -602,12 +604,50 @@ function Reports({d,branch,customer,product}) {
     setReport({title:config[1],columns,rows,summary,filters:chosen.length?chosen.join(" · "):"All records",generated:new Date().toLocaleString("en-LK",{timeZone:"Asia/Colombo"})});
   };
   useEffect(()=>{build();},[type,filters.from,filters.to,filters.sid,filters.cid,filters.pid,filters.status,d]);
+  useEffect(()=>setMovementPage(1),[type,filters.from,filters.to,filters.sid,filters.cid,filters.pid,filters.status]);
+  useEffect(()=>{
+    if(type!=="stock"&&type!=="movement"){setReportError("");setReportLoading(false);return;}
+    let cancelled=false;setReportLoading(true);setReportError("");setReport(null);
+    const params=new URLSearchParams({from:filters.from,to:filters.to,pid:filters.pid,
+      ...(type==="stock"?{sid:filters.sid,status:filters.status}:{status:filters.status,page:String(movementPage)})});
+    request("/reports/"+(type==="stock"?"stock-summary":"movements")+"?"+params.toString())
+      .then(result=>{if(!cancelled)setReport(result);})
+      .catch(e=>{if(!cancelled)setReportError(e.message);})
+      .finally(()=>{if(!cancelled)setReportLoading(false);});
+    return ()=>{cancelled=true;};
+  },[type,filters.from,filters.to,filters.sid,filters.pid,filters.status,movementPage,d]);
   const safe=v=>String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"),html=()=>`<!doctype html><html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#10251f;padding:24px}h1{color:#147a5b;margin-bottom:4px}p{color:#687b74}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #dfe9e4;padding:8px;text-align:left}th{background:#edf5f1}.meta{display:flex;justify-content:space-between}</style></head><body><h1>${safe(report.title)}</h1><div class="meta"><strong>Supun Group of Companies</strong><span>Generated ${safe(report.generated)}</span></div><p>${safe(report.filters)} · Sri Lanka time</p><p>${report.summary.map(([label,value])=>safe(label)+": "+safe(value)).join(" · ")}</p><table><thead><tr>${report.columns.map(x=>`<th>${safe(x)}</th>`).join("")}</tr></thead><tbody>${report.rows.map(row=>`<tr>${row.map(x=>`<td>${safe(x)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
-  const download=()=>{const url=URL.createObjectURL(new Blob([html()],{type:"application/vnd.ms-excel;charset=utf-8"})),a=document.createElement("a");a.href=url;a.download=report.title.replace(/[^a-z0-9]+/gi,"_")+".xls";a.click();URL.revokeObjectURL(url);},printReport=()=>{const w=window.open("","_blank");if(w){w.document.write(html());w.document.close();setTimeout(()=>w.print(),150);}};
+  const download=async()=>{
+    if(!report)return;
+    setReportError("");
+    try{
+      const isMovement=type==="movement";
+      const params=new URLSearchParams({from:filters.from,to:filters.to,pid:filters.pid,status:filters.status});
+      const response=await fetch(isMovement?"/api/reports/movements.xlsx?"+params.toString():"/api/reports/xlsx",{
+        method:isMovement?"GET":"POST",credentials:"same-origin",
+        ...(isMovement?{}:{headers:{"Content-Type":"application/json"},body:JSON.stringify(report)})
+      });
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||"Could not export Excel.");}
+      const url=URL.createObjectURL(await response.blob()),anchor=document.createElement("a");
+      anchor.href=url;anchor.download=report.title.replace(/[^a-z0-9_-]+/gi,"_")+".xlsx";
+      anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(e){setReportError(e.message);}
+  };
+  const printReport=()=>{if(!report)return;const w=window.open("","_blank");if(w){w.document.write(html());w.document.close();setTimeout(()=>w.print(),150);}};
   return <div className="reports-page"><SectionHeading title="Reports" sub="Generate read-only operational reports from current StockEasy records."/>
     <div className="report-type-grid">{REPORT_TYPES.map(([key,label,Icon])=><button key={key} className={"report-type-card"+(type===key?" on":"")} onClick={()=>{setType(key);setFilters(blankFilters());}}><Icon size={19}/><span>{label}</span></button>)}</div>
     <div className="report-filter-panel"><div className="report-filter-head"><div><span>Report filters</span><strong>{config[1]}</strong></div><div className="report-actions"><button className="btn ghost sm" type="button" onClick={resetFilters}><RotateCcw size={15}/> Reset Filters</button></div></div><div className="report-filter-grid">{type==="stock"&&<label><span>Date Range</span><select value={filters.period} onChange={e=>setPeriod(e.target.value)}><option value="all">All dates</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="thisWeek">This Week</option><option value="thisMonth">This Month</option><option value="lastMonth">Last Month</option><option value="thisYear">This Year</option><option value="custom">Custom Date Range</option></select></label>}{usesDate&&<><label><span>From</span><input type="date" value={filters.from} max={filters.to||undefined} disabled={type==="stock"&&!['custom','all'].includes(filters.period)} onChange={e=>setFilter("from",e.target.value)}/></label><label><span>To</span><input type="date" value={filters.to} min={filters.from||undefined} disabled={type==="stock"&&!['custom','all'].includes(filters.period)} onChange={e=>setFilter("to",e.target.value)}/></label></>}{usesSupplier&&<label><span>{type==="stock"?"Usual Supplier":"Supplier / Branch"}</span><select value={filters.sid} onChange={e=>setFilter("sid",e.target.value)}><option value="all">All suppliers / branches</option>{d.branches.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesCustomer&&<label><span>Customer Company</span><select value={filters.cid} onChange={e=>setFilter("cid",e.target.value)}><option value="all">All customer companies</option>{d.customers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesItem&&<label><span>Item / Product</span><select value={filters.pid} onChange={e=>setFilter("pid",e.target.value)}><option value="all">All items</option>{d.products.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>}{usesStatus&&<label><span>{type==="movement"?"Movement Type":"Status"}</span><select value={filters.status} onChange={e=>setFilter("status",e.target.value)}><option value="all">All {type==="movement"?"movement types":"statuses"}</option>{statuses.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}</div></div>
-    {!report?<div className="report-placeholder"><BarChart3 size={30}/><strong>Select filters and preview the report</strong><span>No data is changed when reports are generated.</span></div>:<div className="report-output">{type==="stock"&&<div className="notice"><Info size={16}/> Balances use recorded movements in Sri Lanka time. Usual supplier is a product attribute, not stock provenance. Historical status uses current reorder settings. Balances before the initial migration are not available.</div>}<div className="report-output-head"><div><span>Supun Group of Companies</span><h2>{report.title}</h2><p>{report.filters} · Generated {report.generated}</p></div><div className="report-actions"><button className="btn ghost sm" onClick={download}><Download size={15}/> Download Excel</button><button className="btn ghost sm" onClick={printReport}><Printer size={15}/> Print / Save as PDF</button></div></div><div className="report-summary">{report.summary.map(([label,value])=><div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{!report.rows.length?<Empty Icon={BarChart3} title="No matching records" sub="Change the filters and preview again."/>:<div className="report-table-wrap"><table><thead><tr>{report.columns.map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{report.rows.map((row,i)=><tr key={i}>{row.map((x,j)=><td key={j}>{x}</td>)}</tr>)}</tbody></table></div>}</div>}
+    {reportError&&<div className="error-banner" role="alert"><AlertTriangle size={17}/>{reportError}</div>}
+    {!report?<div className="report-placeholder"><BarChart3 size={30}/><strong>{reportLoading?"Loading report…":"Select filters and preview the report"}</strong><span>No data is changed when reports are generated.</span></div>:<div className="report-output">{type==="stock"&&<div className="notice"><Info size={16}/> Balances use recorded movements in Sri Lanka time. Usual supplier is a product attribute, not stock provenance. Historical status uses current reorder settings. Balances before the initial migration are not available.</div>}<div className="report-output-head"><div><span>Supun Group of Companies</span><h2>{report.title}</h2><p>{report.filters} · Generated {report.generated}</p></div><div className="report-actions"><button className="btn ghost sm" onClick={download}><Download size={15}/> Download Excel</button><button className="btn ghost sm" onClick={printReport}><Printer size={15}/> Print / Save as PDF</button></div></div><div className="report-summary">{report.summary.map(([label,value])=><div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{!report.rows.length?<Empty Icon={BarChart3} title="No matching records" sub="Change the filters and preview again."/>:<div className="report-table-wrap"><table><thead><tr>{report.columns.map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{report.rows.map((row,i)=><tr key={i}>{row.map((x,j)=><td key={j}>{x}</td>)}</tr>)}</tbody></table></div>}
+      {type==="movement"&&report.totalPages>1&&<div className="stock-history-pagination" style={{marginTop:12}}>
+        <span>200 movements per page · {report.totalRecords} total. Excel downloads all filtered records, up to 50,000 per file.</span>
+        <div>
+          <button type="button" className="btn ghost sm" disabled={movementPage<=1||reportLoading} onClick={()=>setMovementPage(p=>Math.max(1,p-1))}>Previous</button>
+          <strong>Page {report.page} of {report.totalPages}</strong>
+          <button type="button" className="btn ghost sm" disabled={movementPage>=report.totalPages||reportLoading} onClick={()=>setMovementPage(p=>p+1)}>Next</button>
+        </div>
+      </div>}
+    </div>}
   </div>;
 }
 
@@ -856,6 +896,23 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
 function MovementForm({title,type,doc,d,close,busy,action}) {
   const isGRN=type==="grn",isReturn=type==="return",isDispatch=!isGRN&&!isReturn;
   const [q,setQ]=useState({}),[by,setBy]=useState(""),[note,setNote]=useState(""),[conditions,setConditions]=useState({});
+  const [importing,setImporting]=useState(false),[importError,setImportError]=useState(""),[importInfo,setImportInfo]=useState("");
+  const onReceiveExcel=async event=>{
+    const file=event.target.files?.[0];event.target.value="";
+    if(!file)return;
+    setImportError("");setImportInfo("");
+    if(!file.name.toLowerCase().endsWith(".xlsx")){setImportError("Select a GRN .xlsx file.");return;}
+    if(file.size>4*1024*1024){setImportError("Maximum GRN Excel size is 4 MB.");return;}
+    setImporting(true);
+    try{
+      const res=await fetch("/api/pos/"+doc.n+"/grn-import",{method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:file});
+      const data=await res.json();
+      if(!res.ok)throw Error(data.error||"Excel validation failed.");
+      setQ(Object.fromEntries(data.lines.map(l=>[l.pid,l.qty])));
+      setImportInfo(data.count+" items / "+data.total+" units loaded. Review below, then save GRN.");
+    }catch(e){setImportError(e.message);}finally{setImporting(false);}
+  };
   const existing=doc.items||doc.lines;
   const options=existing.map(l=>{
     const p=one(d.products,l.pid);
@@ -879,7 +936,19 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
   return <Modal wide className={isGRN?"grn-receive-modal":isDispatch?"grn-receive-modal dispatch-modal":""} title={title} sub={hint} close={close}>
     <form onSubmit={handle}>
       <div className="notice"><Info size={19}/> {isGRN?"From PO":isReturn?"From delivery":"From customer order"}: <strong>{doc.id}</strong></div>
-      {isGRN?<><div className="grn-bulk-actions"><button className="btn" type="button" onClick={receiveAll} disabled={!options.some(l=>l.max>0)}><PackageCheck size={17}/> Receive All</button><button className="btn ghost" type="button" onClick={resetQuantities} disabled={!lines.length}><RotateCcw size={16}/> Reset Quantities</button><span>Fill remaining quantities, then review before saving.</span></div>
+      {isGRN?<><div className="po-excel" style={{margin:"12px 0"}}>
+        <div className="po-excel-heading"><span className="po-excel-symbol"><Download size={20}/></span>
+          <div><strong>Receiving many PO items?</strong><small>Download this PO's GRN sheet, enter actual received quantities, and upload to review.</small></div></div>
+        <div className="po-excel-actions">
+          <a className="btn ghost sm" href={"/api/pos/"+doc.n+"/grn-template"} download={"StockEasy_"+doc.id+"_GRN.xlsx"}><Download size={16}/> Download GRN Excel</a>
+          <label className={"btn sm po-excel-upload"+(importing?" disabled":"")}><Upload size={16}/>{importing?"Checking Excel…":"Upload GRN Excel"}
+            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden disabled={importing||busy} onChange={onReceiveExcel}/>
+          </label>
+        </div>
+        <p className="po-excel-help">Enter <strong>Receive Now</strong> in column I. Upload only fills the quantities below. Stock changes <strong>after Save GRN</strong>, not on upload.</p>
+        {importError&&<div className="po-excel-error" role="alert"><AlertTriangle size={17}/>{importError}</div>}
+        {importInfo&&<div className="po-excel-success" role="status"><Check size={17}/>{importInfo}</div>}
+      </div><div className="grn-bulk-actions"><button className="btn" type="button" onClick={receiveAll} disabled={!options.some(l=>l.max>0)}><PackageCheck size={17}/> Receive All</button><button className="btn ghost" type="button" onClick={resetQuantities} disabled={!lines.length}><RotateCcw size={16}/> Reset Quantities</button><span>Fill remaining quantities, then review before saving.</span></div>
       <div className="grn-entry-table"><div className="grn-entry-row grn-entry-head"><span>Item</span><span>Ordered</span><span>Received</span><span>Still expected</span><span>Receive now</span><span>Stock after</span></div>
         {options.map(l=>{const receive=number(q[l.pid]);return <div className="grn-entry-row" key={l.pid}>
           <div className="inventory-item"><Picture p={l.p}/><span><strong>{l.p?.name}</strong><small>{l.p?.sku||"No item code"}</small></span></div>
@@ -903,7 +972,7 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
       {!isReturn&&<><label>{isGRN?"Received by":"Sent by"}</label><input value={by} onChange={e=>setBy(e.target.value)} placeholder="Your name (optional — login name is used if empty)"/></>}
       <label>{isReturn?"Why are the goods being returned? *":"Notes (optional)"}</label>
       <textarea rows={isGRN?2:3} required={isReturn} value={note} onChange={e=>setNote(e.target.value)} placeholder={isReturn?"Example: Damaged or extra goods":"Optional delivery notes"}/>
-      {isDispatch?<div className="dispatch-sticky-actions"><div><strong>{lines.length}</strong> selected · <strong>{selectedTotal}</strong> units</div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!lines.length}><Truck size={17}/>{busy?"Saving…":"Create Delivery"}</button></div></div>:<Controls busy={busy} close={close} valid={lines.length>0&&(!isReturn||!!note.trim())} label={label}/>} 
+      {isDispatch?<div className="dispatch-sticky-actions"><div><strong>{lines.length}</strong> selected · <strong>{selectedTotal}</strong> units</div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!lines.length}><Truck size={17}/>{busy?"Saving…":"Create Delivery"}</button></div></div>:<Controls busy={busy||importing} close={close} valid={lines.length>0&&(!isReturn||!!note.trim())} label={label}/>} 
     </form>
   </Modal>;
 }
@@ -929,11 +998,11 @@ function SupplierReturnForm({grn,d,close,busy,action}) {
     </form></Modal>;
 }
 function InventoryBulkForm({d,close,action,busy}) {
-  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false),[showUnchanged,setShowUnchanged]=useState(false);
+  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false),[showUnchanged,setShowUnchanged]=useState(false),[archiveMissing,setArchiveMissing]=useState(false);
   const upload=async e=>{
     const file=e.target.files?.[0];e.target.value="";
     if(!file)return;
-    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);setShowUnchanged(false);
+    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);setShowUnchanged(false);setArchiveMissing(false);
     if(!file.name.toLowerCase().endsWith(".xlsx")){setError("Choose an Excel .xlsx file.");return;}
     if(file.size>4*1024*1024){setError("Excel file must be smaller than 4 MB.");return;}
     setUploading(true);
@@ -946,7 +1015,7 @@ function InventoryBulkForm({d,close,action,busy}) {
   };
   const changes=preview?.rows?.filter(x=>x.action!=="unchanged")||[];
   const reviewRows=showUnchanged?preview?.rows||[]:changes;
-  const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading;
+  const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading&&(changes.length>0||archiveMissing);
   return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
     <div className="notice"><Info size={18}/> Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</div>
     <div className="po-excel" style={{marginTop:16,marginBottom:16}}>
@@ -957,13 +1026,13 @@ function InventoryBulkForm({d,close,action,busy}) {
           <input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={uploading||busy} onChange={upload}/>
         </label>
       </div>
-      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are NOT deleted.</p>
+      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are kept by default. A separate option can archive eligible missing items only if you upload your COMPLETE product list.</p>
       {fileName&&<small>Selected: <strong>{fileName}</strong></small>}
     </div>
     {error&&<div className="error-banner" role="alert"><AlertTriangle size={17}/><span>{error}</span></div>}
     {preview&&<>
       <div className="inventory-summary" style={{gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",marginBottom:12}}>
-        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
+        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount],["Missing from Excel",preview.summary.missingCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
       </div>
       {!!preview.summary.categories.length&&<div className="notice"><Info size={16}/><span>New categories from Excel: <strong>{preview.summary.categories.join(", ")}</strong></span></div>}
       {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>Fix these problems and upload again:</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}</div>}
@@ -979,6 +1048,15 @@ function InventoryBulkForm({d,close,action,busy}) {
         </table>
       </div>
 
+      {(preview.missing||[]).length>0&&<div className="notice" style={{marginTop:14,display:"block"}}>
+        <strong>{preview.summary.missingCount} existing active items are absent from this file.</strong>
+        <p className="mute">{preview.summary.archiveEligible} are eligible for optional archiving (zero stock and no open orders/quotations). {preview.summary.archiveBlocked} cannot be archived because of stock or pending documents. No missing item will be removed by default.</p>
+        <details><summary>Review missing items</summary><div style={{maxHeight:190,overflow:"auto"}}>{preview.missing.map(p=><p key={p.id} className="mute">{p.name} ({p.sku||p.id}) — {p.eligible?"Eligible for archive":p.reason}</p>)}</div></details>
+        {preview.summary.archiveEligible>0&&<label className="checkline" style={{marginTop:12}}>
+          <input type="checkbox" checked={archiveMissing} onChange={e=>{setArchiveMissing(e.target.checked);setConfirmed(false);}}/>
+          Archive the {preview.summary.archiveEligible} eligible missing items. Only select this if the Excel is your COMPLETE item list; otherwise leave unchecked.
+        </label>}
+      </div>}
       <p className="mute" style={{marginTop:10}}>Net stock adjustment: <strong>{preview.summary.stockDelta>0?"+":""}{preview.summary.stockDelta}</strong> units across all items.</p>
       <label className="checkline" style={{marginTop:14}}>
         <input type="checkbox" checked={confirmed} disabled={!preview.canCommit} onChange={e=>setConfirmed(e.target.checked)}/>
@@ -986,7 +1064,7 @@ function InventoryBulkForm({d,close,action,busy}) {
       </label>
     </>}
     <div className="form-actions">
-      <button type="button" className="btn" disabled={!canSave} onClick={()=>action("/inventory-import/commit","POST",{token:preview.token,confirm:true},"Bulk inventory upload saved. Item details and stock history updated.","products")}>
+      <button type="button" className="btn" disabled={!canSave} onClick={()=>action("/inventory-import/commit","POST",{token:preview.token,confirm:true,archiveMissing},"Bulk inventory upload saved. Item details and stock history updated.","products")}>
         <Check size={16}/>{busy?"Saving…":"Confirm Bulk Upload"}
       </button>
       <button className="btn ghost" type="button" onClick={close}>Cancel</button>
