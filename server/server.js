@@ -1,9 +1,10 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import db, { passwordHash, passwordMatches } from "./db.js";
+import db, { createDatabaseBackup, passwordHash, passwordMatches } from "./db.js";
 import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
 import { registerQuotationRoutes } from "./quotations.js";
 
@@ -606,6 +607,22 @@ app.post("/api/quarantine",requireEdit("stock_adjustments"),run(req=>transaction
 })));
 
  // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
+app.get("/api/admin/database-backup",admin,(req,res)=>{
+  const stamp=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date()).replaceAll(":","-").replace(" ","_");
+  const filename=`StockEasy_Backup_${stamp}.db`,temporary=path.join(os.tmpdir(),`stockeasy-${crypto.randomUUID()}.db`);
+  try{
+    createDatabaseBackup(temporary);
+    res.setHeader("Cache-Control","no-store");
+    res.download(temporary,filename,error=>{
+      fs.rm(temporary,{force:true},()=>{});
+      if(error&&!res.headersSent)res.status(500).json({error:"Could not download the database backup."});
+    });
+  }catch(error){
+    fs.rm(temporary,{force:true},()=>{});
+    console.error("Database backup error:",error);
+    res.status(500).json({error:"Could not create the database backup."});
+  }
+});
 app.get("/api/staff",admin,run(()=>({ staff:db.prepare("SELECT id,username,role,permissions,active FROM staff ORDER BY active DESC,username").all().map(user=>({...user,permissions:cleanPermissions(user.permissions,user.role)})) })));
 const validRole=r=>{check(["admin","staff","viewer"].includes(r),"Choose a valid staff role.");return r;};
 app.post("/api/staff",admin,run(req=>{

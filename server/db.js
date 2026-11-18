@@ -10,6 +10,12 @@ const databasePath = path.resolve(process.env.STOCKEASY_DB_PATH || path.join(dir
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 // Node's SQLite module avoids native C++ builds on Windows.
 const sqlite = new DatabaseSync(databasePath);
+export function createDatabaseBackup(targetPath) {
+  const resolved = path.resolve(targetPath);
+  if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
+  sqlite.exec(`VACUUM INTO '${resolved.replaceAll("'", "''")}'`);
+  return resolved;
+}
 const db = {
   prepare(sql) { return sqlite.prepare(sql); },
   exec(sql) { return sqlite.exec(sql); },
