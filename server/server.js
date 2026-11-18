@@ -16,10 +16,10 @@ app.use((req, res, next) => {
   res.setHeader("Referrer-Policy", "same-origin");
   next();
 });
-const today = () => {
-  const d = new Date();
-  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
-};
+const today = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+// SQLite stores UTC. Report and display dates use Sri Lanka's UTC+05:30 business day.
+const localAt="datetime(created_at,'+330 minutes')";
+const movementFields="id,product_id pid,qty_change qty,damaged_change damagedQty,event_type type,reference,note,actor,"+localAt+" at,created_at atUtc";
 const code = (prefix, n) => `${prefix}-${String(n).padStart(4, "0")}`;
 const fail = (message, status = 400) => { const e = new Error(message); e.status = status; throw e; };
 const check = (condition, message, status = 400) => { if (!condition) fail(message, status); };
@@ -62,15 +62,20 @@ const cookieOpts = req => `HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${pr
 const sessionMs = 7 * 24 * 60 * 60 * 1000;
 const rememberedSessionMs = 30 * 24 * 60 * 60 * 1000;
 const attempts = new Map();
-const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports","staff"];
-const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : role === "viewer" ? "view" : feature === "staff" ? "none" : "edit"]));
+const FEATURES = ["dashboard","products","suppliers","customers","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports","stock_adjustments","staff"];
+const defaultPermissions = role => Object.fromEntries(FEATURES.map(feature => [feature, role === "admin" ? "edit" : feature === "stock_adjustments" || feature === "staff" ? "none" : role === "viewer" ? "view" : "edit"]));
 const cleanPermissions = (value, role = "staff") => {
   if (role === "admin") return defaultPermissions("admin");
   let source = value;
   if (typeof source === "string") { try { source = JSON.parse(source); } catch { source = {}; } }
   const fallback = defaultPermissions(role);
-  return Object.fromEntries(FEATURES.map(feature => [feature, feature === "staff" ? "none" : ["none","view","edit"].includes(source?.[feature]) ? source[feature] : feature === "quotations" && ["none","view","edit"].includes(source?.customer_orders)
-    ? source.customer_orders : feature === "reports" && role === "staff" ? "none" : fallback[feature]]));
+  return Object.fromEntries(FEATURES.map(feature => {
+    let level=feature==="staff"?"none": ["none","view","edit"].includes(source?.[feature])?source[feature]:
+      feature==="quotations"&&["none","view","edit"].includes(source?.customer_orders)?source.customer_orders:
+      feature==="stock_adjustments"||feature==="reports"&&role==="staff"?"none":fallback[feature];
+    if(role==="viewer"&&level==="edit")level=feature==="stock_adjustments"?"none":"view";
+    return [feature,level];
+  }));
 };
 const publicUser = user => ({ id:user.id, username:user.username, role:user.role, permissions:cleanPermissions(user.permissions,user.role) });
 app.post("/api/login", (req, res) => {
@@ -125,12 +130,12 @@ app.get("/api/all", run(req => {
   const grnLines = db.prepare("SELECT grn_id,product_id pid,qty FROM grn_lines").all();
   const orderItems = db.prepare("SELECT order_id,product_id pid,qty,price,dispatched FROM customer_order_items").all();
   const deliveryLines = db.prepare("SELECT delivery_id,product_id pid,qty FROM delivery_lines").all();
-  const returnLines = db.prepare("SELECT return_id,product_id pid,qty FROM return_lines").all();
+  const returnLines = db.prepare("SELECT return_id,product_id pid,qty,condition FROM return_lines").all();
   const supplierReturnLines = db.prepare("SELECT return_id,product_id pid,qty FROM supplier_return_lines").all();
   return {
     user: publicUser(req.user),
     branches: canSee("suppliers","products","purchase_orders","goods_received","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
-    products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","stock_adjustments","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,damaged_stock damagedStock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
     categories: canSee("products","reports") ? db.prepare("SELECT id,name,active FROM product_categories ORDER BY active DESC,name COLLATE NOCASE").all() : [],
     customers: canSee("customers","customer_orders","quotations","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
     pos: canSee("purchase_orders","goods_received","reports") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
@@ -154,14 +159,49 @@ app.get("/api/all", run(req => {
     returns: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
       .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
       : [],
-    movements: canSee("stock_history","reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : [],
-    reportMovements: canSee("reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id").all() : []
+    movements: canSee("stock_history","reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : [],
+    reportMovements: canSee("reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id").all() : [],
+    dashboardChart: canSee("dashboard") ? db.prepare("SELECT date("+localAt+") day, SUM(CASE WHEN event_type IN ('Goods received','GRN reversed') THEN qty_change ELSE 0 END) received, SUM(CASE WHEN event_type IN ('Delivered to customer','Delivery reversed') THEN -qty_change ELSE 0 END) delivered FROM stock_movements WHERE created_at>=datetime('now','-12 months','-2 days') GROUP BY day ORDER BY day").all() : [],
+    dashboardCounts: canSee("dashboard") ? {
+      items:db.prepare("SELECT COUNT(*) n FROM products WHERE active=1").get().n,
+      low:db.prepare("SELECT COUNT(*) n FROM products WHERE active=1 AND stock<=reorder").get().n,
+      pending:db.prepare("SELECT COUNT(*) n FROM purchase_orders WHERE status IN ('Ordered','Part received')").get().n,
+      orders:db.prepare("SELECT COUNT(*) n FROM customer_orders WHERE status IN ('Open','Part dispatched')").get().n
+    } : null
   };
 }));
 
-const logStock = (pid, change, type, ref, note, actor) => db.prepare(
-  "INSERT INTO stock_movements(product_id,qty_change,event_type,reference,note,actor) VALUES(?,?,?,?,?,?)"
-).run(pid, change, type, ref, note || "", actor || "System");
+const logStock = (pid, change, type, ref, note, actor, damagedChange=0) => db.prepare(
+  "INSERT INTO stock_movements(product_id,qty_change,event_type,reference,note,actor,damaged_change) VALUES(?,?,?,?,?,?,?)"
+).run(pid, change, type, ref, note || "", actor || "System", damagedChange);
+function changeDamaged(pid,delta){
+  const p=find("products",pid);
+  check(p.damaged_stock+delta>=0,"Not enough quarantined stock for "+p.name+".",409);
+  db.prepare("UPDATE products SET damaged_stock=damaged_stock+? WHERE id=?").run(delta,pid);
+}
+app.get("/api/stock-history",run(req=>{
+  check(cleanPermissions(req.user.permissions,req.user.role).stock_history!=="none","No stock history access.",403);
+  const where=[],params=[];
+  const add=(sql,...values)=>{where.push(sql);params.push(...values);};
+  const q=str(req.query.q,120).toLowerCase();
+  if(q)add("instr(lower(p.name||' '||COALESCE(p.sku,'')||' '||m.reference||' '||m.actor||' '||m.note),?)>0",q);
+  if(req.query.pid&&req.query.pid!=="all")add("m.product_id=?",ident(req.query.pid));
+  const dateValue=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""))?String(v):"";
+  const from=dateValue(req.query.from),to=dateValue(req.query.to);
+  if(from)add("m.created_at>=datetime(?,'-330 minutes')",from);
+  if(to)add("m.created_at<datetime(?,'+1 day','-330 minutes')",to);
+  check(!from||!to||from<=to,"Choose a valid date range.");
+  const group="CASE WHEN event_type LIKE '%reversed%' THEN 'Reversal' WHEN event_type='Goods received' THEN 'GRN' WHEN event_type LIKE 'Supplier return%' THEN 'Supplier Return' WHEN event_type LIKE 'Customer return%' THEN 'Customer Return' WHEN event_type='Delivered to customer' THEN 'Delivery' WHEN event_type LIKE 'Quarantine%' THEN 'Quarantine' ELSE 'Adjustment' END";
+  if(req.query.type&&req.query.type!=="all")add("("+group+")=?",str(req.query.type,40));
+  if(req.query.direction==="in")add("m.qty_change>0");
+  if(req.query.direction==="out")add("m.qty_change<0");
+  if(req.query.direction==="quarantine")add("m.damaged_change<>0");
+  const source=" FROM stock_movements m JOIN products p ON p.id=m.product_id"+(where.length?" WHERE "+where.join(" AND "):"");
+  const totals=db.prepare("SELECT COUNT(*) records,COALESCE(SUM(CASE WHEN m.qty_change>0 THEN m.qty_change ELSE 0 END),0) stockIn,COALESCE(SUM(CASE WHEN m.qty_change<0 THEN -m.qty_change ELSE 0 END),0) stockOut,COALESCE(SUM(CASE WHEN ("+group+")='Adjustment' THEN 1 ELSE 0 END),0) adjustments"+source).get(...params);
+  const pageSize=10,page=Math.max(1,Math.min(Math.ceil(totals.records/pageSize)||1,Number.parseInt(req.query.page,10)||1));
+  const rows=db.prepare("SELECT m.id,m.product_id pid,m.qty_change qty,m.damaged_change damagedQty,m.event_type type,m.reference,m.note,m.actor,datetime(m.created_at,'+330 minutes') at,m.created_at atUtc"+source+" ORDER BY m.id DESC LIMIT ? OFFSET ?").all(...params,pageSize,(page-1)*pageSize);
+  return {rows,totals,page,pageSize};
+}));
 function changeStock(pid, delta) {
   const p = find("products", pid);
   check(p.stock + delta >= 0, `Not enough stock for ${p.name}. Available: ${p.stock}.`, 409);
@@ -247,6 +287,7 @@ function productFields(b) {
 }
 app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
   const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock");
+  check(!opening||cleanPermissions(req.user.permissions,req.user.role).stock_adjustments==="edit","Opening stock requires stock correction permission.",403);
   const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
   logStock(info.lastInsertRowid, opening, "Opening balance", "NEW ITEM", "Initial quantity", req.user.username);
@@ -519,9 +560,12 @@ app.post("/api/returns",requireEdit("deliveries"),run(req=>transaction(()=>{
   const document=code("RTN",id);
   db.prepare("UPDATE customer_returns SET code=? WHERE id=?").run(document,id);
   for(const l of validated){
-    changeStock(l.pid,l.qty);
-    db.prepare("INSERT INTO return_lines(return_id,product_id,qty) VALUES(?,?,?)").run(id,l.pid,l.qty);
-    logStock(l.pid,l.qty,"Customer return",document,note,req.user.username);
+    const condition=req.body.lines.find(x=>Number(x.pid)===l.pid)?.condition;
+    check(["sellable","quarantine"].includes(condition),"Choose the inspected condition for each returned item.");
+    const quarantined=condition==="quarantine";
+    if(quarantined)changeDamaged(l.pid,l.qty);else changeStock(l.pid,l.qty);
+    db.prepare("INSERT INTO return_lines(return_id,product_id,qty,condition) VALUES(?,?,?,?)").run(id,l.pid,l.qty,condition);
+    logStock(l.pid,quarantined?0:l.qty,"Customer return",document,note+" · "+condition,req.user.username,quarantined?l.qty:0);
   }
   return {code:document};
 })));
@@ -530,16 +574,17 @@ app.post("/api/returns/:id/reverse", requireEdit("deliveries"), run(req => trans
   check(ret, "Return not found.", 404);
   check(ret.status === "Active", "This return is already reversed.", 409);
   const reason = required(req.body?.reason, "reason", 500);
-  const lines = db.prepare("SELECT product_id pid,qty FROM return_lines WHERE return_id=?").all(ret.id);
+  const lines = db.prepare("SELECT product_id pid,qty,condition FROM return_lines WHERE return_id=?").all(ret.id);
   for (const l of lines) {
-    changeStock(l.pid, -l.qty);
-    logStock(l.pid, -l.qty, "Customer return reversed", ret.code, reason, req.user.username);
+    const quarantined=l.condition==="quarantine";
+    if(quarantined)changeDamaged(l.pid,-l.qty);else changeStock(l.pid,-l.qty);
+    logStock(l.pid,quarantined?0:-l.qty,"Customer return reversed",ret.code,reason,req.user.username,quarantined?-l.qty:0);
   }
   db.prepare("UPDATE customer_returns SET status='Reversed' WHERE id=?").run(ret.id);
   return { ok: true };
 })));
 
-app.post("/api/adjustments",requireEdit("products"),run(req=>transaction(()=>{
+app.post("/api/adjustments",requireEdit("stock_adjustments"),run(req=>transaction(()=>{
   const pid=ident(req.body?.pid);
   const qty=Number(req.body?.change);
   check(Number.isSafeInteger(qty)&&qty!==0&&Math.abs(qty)<=100000000,"Enter a non-zero whole-number change.");
@@ -549,7 +594,17 @@ app.post("/api/adjustments",requireEdit("products"),run(req=>transaction(()=>{
   return {ok:true};
 })));
 
-// Admin controls: no password hashes in responses; disable instead of deleting audit actors.
+app.post("/api/quarantine",requireEdit("stock_adjustments"),run(req=>transaction(()=>{
+  const pid=ident(req.body?.pid),qty=amount(req.body?.qty,"Quantity",1);
+  const mode=str(req.body?.mode,20),reason=required(req.body?.reason,"inspection reason",500);
+  check(["release","dispose","hold"].includes(mode),"Choose a quarantine action.");
+  if(mode==="hold"){changeStock(pid,-qty);changeDamaged(pid,qty);}
+  else{changeDamaged(pid,-qty);if(mode==="release")changeStock(pid,qty);}
+  logStock(pid,mode==="release"?qty:mode==="hold"?-qty:0,"Quarantine "+mode,"QA",reason,req.user.username,mode==="hold"?qty:-qty);
+  return {ok:true};
+})));
+
+ // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
 app.get("/api/staff",admin,run(()=>({ staff:db.prepare("SELECT id,username,role,permissions,active FROM staff ORDER BY active DESC,username").all().map(user=>({...user,permissions:cleanPermissions(user.permissions,user.role)})) })));
 const validRole=r=>{check(["admin","staff","viewer"].includes(r),"Choose a valid staff role.");return r;};
 app.post("/api/staff",admin,run(req=>{
