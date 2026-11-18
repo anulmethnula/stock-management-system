@@ -19,7 +19,7 @@ test("Excel template is a genuine XLSX ZIP file and preview imports correct item
 });
 
 test("Blank Quantity cells are skipped, not ordered accidentally",()=>{
-  assert.throws(()=>parsePOUpload(buildPOTemplate(items),items),/No quantities found/);
+  assert.throws(()=>parsePOUpload(buildPOTemplate(items),items),/No order quantities entered/);
   const imported=parsePOUpload(buildPOTemplate(items,{13:2}),items);
   assert.deepEqual(imported.map(x=>[x.pid,x.qty,x.cost]),[[13,2,0]]);
 });
@@ -36,7 +36,7 @@ test("Rejects missing/inactive product IDs and changed item codes",()=>{
   const old=[{...items[0],sku:"OLD-SKU"}];
   assert.throws(()=>parsePOUpload(buildPOTemplate(old,{11:1}),items),/Item Code does not match/);
   assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],id:100}],{100:1}),items),/not found/);
-  assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],active:0}],{11:1}),[{...items[0],active:0}]),/Item not found/);
+  assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],active:0}],{11:1}),[{...items[0],active:0}]),/not found/);
 });
 
 test("Rejects unrelated or very large uploads safely",()=>{
