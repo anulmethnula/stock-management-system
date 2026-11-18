@@ -126,16 +126,21 @@ app.get("/api/all", run(req => {
   const orderItems = db.prepare("SELECT order_id,product_id pid,qty,price,dispatched FROM customer_order_items").all();
   const deliveryLines = db.prepare("SELECT delivery_id,product_id pid,qty FROM delivery_lines").all();
   const returnLines = db.prepare("SELECT return_id,product_id pid,qty FROM return_lines").all();
+  const supplierReturnLines = db.prepare("SELECT return_id,product_id pid,qty FROM supplier_return_lines").all();
   return {
     user: publicUser(req.user),
     branches: canSee("suppliers","products","purchase_orders","goods_received","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
     products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    categories: canSee("products","reports") ? db.prepare("SELECT id,name,active FROM product_categories ORDER BY active DESC,name COLLATE NOCASE").all() : [],
     customers: canSee("customers","customer_orders","quotations","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
     pos: canSee("purchase_orders","goods_received","reports") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
       .map(o => ({ ...o, items: poItems.filter(i => i.po_id === o.n) }))
       : [],
     grns: canSee("goods_received","reports") ? db.prepare('SELECT g.id n,g.code id,p.code poId,g.po_id poN,g.supplier_id sid,g.date,g.received_by "by",g.note,g.status FROM grns g JOIN purchase_orders p ON p.id=g.po_id ORDER BY g.id DESC').all()
       .map(g => ({ ...g, lines: grnLines.filter(l => l.grn_id === g.n) }))
+      : [],
+    supplierReturns: canSee("goods_received","reports") ? db.prepare('SELECT r.id n,r.code id,r.grn_id grnN,g.code grnId,r.supplier_id sid,r.date,r.reason_type reasonType,r.note,r.returned_by "by",r.status FROM supplier_returns r JOIN grns g ON g.id=r.grn_id ORDER BY r.id DESC').all()
+      .map(r => ({ ...r, lines: supplierReturnLines.filter(l => l.return_id === r.n) }))
       : [],
     quotations: canSee("quotations","reports") ? db.prepare("SELECT id n,code id,customer_id cid,customer_name customerName,customer_address customerAddress,date,valid_until validUntil,status,note,converted_order_id convertedN FROM customer_quotations ORDER BY id DESC").all()
       .map(q=>({...q,items:db.prepare("SELECT product_id pid,item_name name,item_code sku,item_unit unit,qty,price FROM quotation_items WHERE quotation_id=? ORDER BY id").all(q.n),
@@ -149,7 +154,8 @@ app.get("/api/all", run(req => {
     returns: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
       .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
       : [],
-    movements: canSee("stock_history","reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : []
+    movements: canSee("stock_history","reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : [],
+    reportMovements: canSee("reports") ? db.prepare("SELECT id,product_id pid,qty_change qty,event_type type,reference,note,actor,created_at at FROM stock_movements ORDER BY id").all() : []
   };
 }));
 
@@ -233,8 +239,10 @@ app.delete("/api/customers/:id", requireEdit("customers"), run(req => {
 function productFields(b) {
   const sid = ident(b.sid);
   check(find("suppliers", sid).active, "Choose an active branch.");
+  const category=required(b.category||"Other","category",40);
+  check(db.prepare("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND active=1").get(category),"Choose an active category.",409);
   const img = b.img && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(b.img) && b.img.length < 3000000 ? b.img : null;
-  return [required(b.name, "item name"), str(b.sku, 60) || null, str(b.category, 40) || "Other", str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
+  return [required(b.name, "item name"), str(b.sku, 60) || null, category, str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
     money(b.cost, "Buying price"), money(b.sell ?? 0, "Selling price"), amount(b.reorder ?? 5, "Low-stock warning")];
 }
 app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
@@ -258,6 +266,23 @@ app.delete("/api/products/:id", requireEdit("products"), run(req => {
   else db.prepare("DELETE FROM products WHERE id=?").run(id);
   return { archived: !!used };
 }));
+
+app.post("/api/categories",requireEdit("products"),run(req=>{
+  const name=required(req.body?.name,"category name",40);
+  check(!db.prepare("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE").get(name),"A category with this name already exists.",409);
+  const id=db.prepare("INSERT INTO product_categories(name) VALUES(?)").run(name).lastInsertRowid;
+  return {id,name};
+}));
+app.put("/api/categories/:id",requireEdit("products"),run(req=>transaction(()=>{
+  const id=ident(req.params.id),current=db.prepare("SELECT * FROM product_categories WHERE id=?").get(id);
+  check(current,"Category not found.",404);
+  const name=required(req.body?.name??current.name,"category name",40),active=req.body?.active===0?0:1;
+  check(!db.prepare("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND id<>?").get(name,id),"A category with this name already exists.",409);
+  if(!active)check(!db.prepare("SELECT 1 FROM products WHERE category=? COLLATE NOCASE LIMIT 1").get(current.name),"Reassign items in this category before archiving it.",409);
+  db.prepare("UPDATE product_categories SET name=?,active=? WHERE id=?").run(name,active,id);
+  if(name!==current.name)db.prepare("UPDATE products SET category=? WHERE category=? COLLATE NOCASE").run(name,current.name);
+  return {id,name,active};
+})));
 
 function poPayload(b) {
   const sid = ident(b.sid);
@@ -344,6 +369,8 @@ app.post("/api/pos/:id/receive", requireEdit("goods_received"), run(req => trans
 app.post("/api/grns/:id/reverse", requireEdit("goods_received"), run(req => transaction(() => {
   const grn = find("grns", req.params.id);
   check(grn.status === "Active", "This GRN is already reversed.", 409);
+  check(!db.prepare("SELECT 1 FROM supplier_returns WHERE grn_id=? AND status='Active' LIMIT 1").get(grn.id),
+    "This GRN has active supplier returns. Reverse those GRTNs before reversing the GRN.",409);
   const lines = db.prepare("SELECT product_id pid,qty FROM grn_lines WHERE grn_id=?").all(grn.id);
   for (const l of lines) {
     changeStock(l.pid,-l.qty);
@@ -353,6 +380,46 @@ app.post("/api/grns/:id/reverse", requireEdit("goods_received"), run(req => tran
   db.prepare("UPDATE grns SET status='Reversed' WHERE id=?").run(grn.id);
   recalcPO(grn.po_id);
   return { ok: true };
+})));
+
+app.post("/api/supplier-returns", requireEdit("goods_received"), run(req => transaction(() => {
+  const grn=find("grns",req.body?.grnN);
+  check(grn.status==="Active","Only an active GRN can be returned to its supplier.",409);
+  const reasonType=str(req.body?.reasonType,30);
+  check(["damaged","defective","wrong_item","other"].includes(reasonType),"Choose a valid return reason.");
+  const note=str(req.body?.note,500);
+  if(reasonType==="other")check(note.length>0,"Enter the return reason when Other is selected.");
+  const lines=validateLines(req.body?.lines,"return");
+  const validated=lines.map(l=>{
+    const original=db.prepare("SELECT qty FROM grn_lines WHERE grn_id=? AND product_id=?").get(grn.id,l.pid);
+    check(original,"That product was not received on this GRN.",409);
+    const previous=db.prepare("SELECT COALESCE(SUM(srl.qty),0) n FROM supplier_return_lines srl JOIN supplier_returns sr ON sr.id=srl.return_id WHERE sr.grn_id=? AND sr.status='Active' AND srl.product_id=?").get(grn.id,l.pid).n;
+    const remaining=original.qty-previous;
+    check(l.qty<=remaining,`Only ${remaining} units of ${l.product.name} remain returnable from this GRN.`,409);
+    check(l.qty<=l.product.stock,`Only ${l.product.stock} units of ${l.product.name} are currently available in stock.`,409);
+    return l;
+  });
+  const returnedBy=str(req.body?.by||req.user.username,100)||req.user.username;
+  const id=db.prepare("INSERT INTO supplier_returns(code,grn_id,supplier_id,date,reason_type,note,returned_by) VALUES('',?,?,?,?,?,?)")
+    .run(grn.id,grn.supplier_id,today(),reasonType,note,returnedBy).lastInsertRowid;
+  const document=code("GRTN",id);
+  db.prepare("UPDATE supplier_returns SET code=? WHERE id=?").run(document,id);
+  for(const l of validated){
+    changeStock(l.pid,-l.qty);
+    db.prepare("INSERT INTO supplier_return_lines(return_id,product_id,qty) VALUES(?,?,?)").run(id,l.pid,l.qty);
+    logStock(l.pid,-l.qty,"Supplier return",document,`${reasonType.replace("_"," ")} · From ${grn.code}${note?` · ${note}`:""}`,req.user.username);
+  }
+  return {code:document};
+})));
+app.post("/api/supplier-returns/:id/reverse", requireEdit("goods_received"), run(req => transaction(() => {
+  const ret=db.prepare("SELECT * FROM supplier_returns WHERE id=?").get(ident(req.params.id));
+  check(ret,"Supplier return not found.",404);
+  check(ret.status==="Active","This supplier return is already reversed.",409);
+  const reason=required(req.body?.reason,"reason",500);
+  const lines=db.prepare("SELECT product_id pid,qty FROM supplier_return_lines WHERE return_id=?").all(ret.id);
+  for(const l of lines){changeStock(l.pid,l.qty);logStock(l.pid,l.qty,"Supplier return reversed",ret.code,reason,req.user.username);}
+  db.prepare("UPDATE supplier_returns SET status='Reversed' WHERE id=?").run(ret.id);
+  return {ok:true};
 })));
 
 function orderPayload(b) {

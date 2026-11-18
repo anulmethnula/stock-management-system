@@ -60,6 +60,18 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", phone2: "071999999", address: "Office", notes: "Call before delivery", customer_type: "external" });
     const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
+    // Categories persist, reject case-insensitive duplicates, and cannot be archived while assigned.
+    let categorySnapshot=await snapshot();
+    const packaging=categorySnapshot.categories.find(x=>x.name==="Packaging");
+    assert.ok(packaging);
+    await api("/categories/"+packaging.id,"PUT",{name:"Packaging",active:0},409);
+    const categoryId=await idOf("/categories","id",{name:"Consumables"});
+    await api("/categories","POST",{name:"consumables"},409);
+    await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:1});
+    categorySnapshot=await snapshot();
+    assert.ok(categorySnapshot.categories.some(x=>x.id===categoryId&&x.name==="Factory Consumables"));
+    await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:0});
+    await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:1});
     // Quote -> recorded customer approval -> exactly one CO, with prices preserved.
     const expiry=new Date();expiry.setDate(expiry.getDate()+14);
     const validUntil=[expiry.getFullYear(),String(expiry.getMonth()+1).padStart(2,"0"),String(expiry.getDate()).padStart(2,"0")].join("-");
@@ -135,6 +147,18 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const secondGrn = snap.grns[0].n;
     await api("/pos/" + poN + "/receive", "POST", { lines: [{ pid, qty: 1 }] }, 409);
 
+    // Supplier returns are separate GRTNs: they reduce stock without changing PO receipt totals.
+    const grtnCode = await idOf("/supplier-returns", "code", { grnN:firstGrn,lines:[{pid,qty:2}],reasonType:"damaged",note:"Damaged in transit",by:"Store clerk" });
+    snap=await snapshot();
+    assert.match(grtnCode,/^GRTN-/);
+    assert.equal(snap.products.find(x=>x.id===pid).stock,18);
+    assert.equal(snap.pos.find(x=>x.n===poN).items[0].received,20);
+    assert.equal(snap.supplierReturns[0].grnN,firstGrn);
+    await api("/supplier-returns","POST",{grnN:firstGrn,lines:[{pid,qty:11}],reasonType:"defective"},409);
+    await api("/grns/"+firstGrn+"/reverse","POST",{reason:"Wrong receipt"},409);
+    await api("/supplier-returns/"+snap.supplierReturns[0].n+"/reverse","POST",{reason:"Supplier return cancelled"});
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).stock,20);
+
     const coCode = await idOf("/customer-orders", "code", { cid, items: [{ pid, qty: 15, price: 150 }], note: "Send this week" });
     const coN = (await snapshot()).orders.find(x => x.id === coCode).n;
     const deliveryCode = await idOf("/customer-orders/" + coN + "/dispatch", "code",
@@ -176,6 +200,8 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(snap.pos.find(x => x.n === poN).sid, b);
     assert.ok(snap.movements.some(x => x.type === "Delivered to customer" && x.qty < 0));
     assert.ok(snap.movements.some(x => x.type === "Goods received" && x.qty > 0));
+    assert.ok(snap.movements.some(x => x.type === "Supplier return" && x.qty < 0));
+    assert.ok(snap.movements.some(x => x.type === "Supplier return reversed" && x.qty > 0));
     assert.ok(snap.movements.some(x => x.type === "Stock correction"));
 
     // Custom permissions hide unapproved modules and block edits at the API.

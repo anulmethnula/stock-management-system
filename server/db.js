@@ -55,6 +55,12 @@ addColumn("products", "active", "INTEGER NOT NULL DEFAULT 1");
 addColumn("grns", "status", "TEXT NOT NULL DEFAULT 'Active'");
 addColumn("staff", "permissions", "TEXT NOT NULL DEFAULT '{}'");
 
+// Seed the category catalogue without changing any existing product record.
+const defaultCategories = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
+const insertCategory = db.prepare("INSERT OR IGNORE INTO product_categories(name) VALUES(?)");
+defaultCategories.forEach(name => insertCategory.run(name));
+db.prepare("SELECT DISTINCT TRIM(category) name FROM products WHERE TRIM(COALESCE(category,''))<>''").all().forEach(row => insertCategory.run(row.name));
+
 // Replace the original grocery demo catalogue with factory-relevant examples.
 const legacyProducts = [
   ["Rice 5kg bag", "Safety helmet shell", "HEL-SHELL-001", "Helmets", "🪖", "pieces"],

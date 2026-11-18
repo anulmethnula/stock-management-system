@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS products (
   reorder INTEGER NOT NULL DEFAULT 5,
   active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS product_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS purchase_orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT,
@@ -56,6 +61,24 @@ CREATE TABLE IF NOT EXISTS grn_lines (
   product_id INTEGER NOT NULL REFERENCES products(id),
   qty INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS supplier_returns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  grn_id INTEGER NOT NULL REFERENCES grns(id),
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+  date TEXT NOT NULL,
+  reason_type TEXT NOT NULL CHECK(reason_type IN ('damaged','defective','wrong_item','other')),
+  note TEXT NOT NULL DEFAULT '',
+  returned_by TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Active'
+);
+CREATE TABLE IF NOT EXISTS supplier_return_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  return_id INTEGER NOT NULL REFERENCES supplier_returns(id),
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  qty INTEGER NOT NULL CHECK(qty > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_returns_grn ON supplier_returns(grn_id);
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
