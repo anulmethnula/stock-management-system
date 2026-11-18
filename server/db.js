@@ -74,6 +74,11 @@ db.transaction(() => {
     db.prepare("INSERT INTO schema_migrations(name) VALUES(?)").run(migration);
   }
   db.prepare("SELECT DISTINCT TRIM(category) name FROM products WHERE TRIM(COALESCE(category,''))<>''").all().forEach(row=>insert.run(row.name));
+  // Hide unused legacy demonstration categories; keep all categories assigned to real items.
+  for(const name of ["Helmets","Electrical","Safety gear","Raw materials","Packaging","Tools","Other"]){
+    if(!db.prepare("SELECT 1 FROM products WHERE category=? COLLATE NOCASE LIMIT 1").get(name))
+      db.prepare("UPDATE product_categories SET active=0 WHERE name=? COLLATE NOCASE").run(name);
+  }
 })();
     
 export function passwordHash(password) {
