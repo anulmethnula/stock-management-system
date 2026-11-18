@@ -187,8 +187,11 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.match(templateResponse.headers.get("content-type")||"",/spreadsheetml/);
     const templateBuffer=Buffer.from(await templateResponse.arrayBuffer());
     assert.equal(templateBuffer.readUInt32LE(0),0x04034b50);
+    assert.ok(templateBuffer.includes(Buffer.from("Appliances")), "PO template must include the latest category assigned by inventory import");
+    assert.ok(templateBuffer.includes(Buffer.from("CAMY Updated AC")), "PO template must include products updated by stock migration");
+    assert.ok(templateBuffer.includes(Buffer.from("Order Quantity")), "PO template must use the new PO-specific order quantity column");
     assert.equal((await api("/all")).data.pos.length,0);
-    const fill=buildPOTemplate([{id:pid,sku:"BOX-001",name:"Paper Box",unit:"boxes",cost:100,active:1}],{[pid]:20});
+    const fill=buildPOTemplate([{id:pid,sku:"BOX-001",name:"Paper Box",category:"Packaging",supplierName:"Supun Central",unit:"boxes",stock:0,cost:100,active:1}],{[pid]:20});
     const previewResponse=await fetch(root+"/po-import",{
       method:"POST",headers:{Cookie:cookie,"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:fill
     });

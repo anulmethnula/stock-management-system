@@ -351,7 +351,8 @@ app.get("/api/po-template", (req,res) => {
   const access=cleanPermissions(req.user.permissions,req.user.role).purchase_orders;
   if(access==="none") return res.status(403).json({error:"You do not have access to purchase orders."});
   try {
-    const products=db.prepare("SELECT id,sku,name,unit,cost FROM products WHERE active=1 ORDER BY name,id").all();
+    const products=db.prepare("SELECT p.id,p.sku,p.name,p.category,p.unit,p.stock,p.cost,s.name supplierName FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.category COLLATE NOCASE,p.name COLLATE NOCASE,p.id").all();
+    if(!products.length) return res.status(409).json({error:"No active items yet. Import your existing products from Items → Bulk Upload Excel before creating a purchase order."});
     const workbook=buildPOTemplate(products);
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",'attachment; filename="StockEasy_PO_Template.xlsx"');
@@ -366,7 +367,7 @@ app.post("/api/po-import", requireEdit("purchase_orders"),
   express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
   run(req=>{
     check(Buffer.isBuffer(req.body)&&req.body.length>0,"Please select a .xlsx file to upload.");
-    const products=db.prepare("SELECT id,sku,name,active,cost FROM products").all();
+    const products=db.prepare("SELECT id,sku,name,category,unit,active,cost FROM products").all();
     const items=parsePOUpload(req.body,products);
     return {items,count:items.length,total:items.reduce((n,l)=>n+l.qty*l.cost,0)};
   })
