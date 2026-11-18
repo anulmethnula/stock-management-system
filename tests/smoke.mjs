@@ -6,7 +6,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { buildPOTemplate, buildInventoryTemplate } from "../server/po-excel.js";
+import { buildPOTemplate, buildInventoryTemplate, buildGRNTemplate } from "../server/po-excel.js";
 
 async function unusedPort() {
   const server = net.createServer();
@@ -105,8 +105,11 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkItem.stock,12);
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
     const twice=await previewExcel(inventoryFile);
-    assert.equal(twice.canCommit,false);
-    assert.match(twice.errors.join(" "),/already been imported|already match/);
+    assert.equal(twice.summary.newCount,0);
+    assert.equal(twice.summary.updateCount,0);
+    assert.ok(twice.summary.archiveEligible>=1);
+    await api("/inventory-import/commit","POST",{token:twice.token,confirm:true},400);
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).active,1);
     // A later physical recount may legitimately use the same target quantities
     // after another transaction changed the real stock. Preview must show a delta.
     await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
@@ -135,6 +138,17 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkState.categories.find(x=>x.name==="Appliances").active,1);
     assert.equal(bulkState.products.filter(x=>x.sku?.toLowerCase()==="bulk-ac").length,1);
     assert.equal(bulkState.movements.filter(x=>x.reference===done.code).length,1);
+    // Two rows that point to one existing product under different keys MUST
+    // not apply two separate quantity changes.
+    const aliases=await previewExcel(buildInventoryTemplate([
+      {id:bulkItem.id,sku:"",name:"CAMY Updated AC",category:"Appliances",
+       supplierName:"Supun Central",unit:"pieces",stock:16,cost:800,sell:1250},
+      {id:"",sku:"BULK-AC",name:"CAMY Similar AC",category:"Appliances",
+       supplierName:"Supun Central",unit:"pieces",stock:25,cost:800,sell:1250}
+    ]));
+    assert.equal(aliases.canCommit,false);
+    assert.match(aliases.errors.join(" "),/same saved item/);
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,15);
     const wrongSupplier=await previewExcel(buildInventoryTemplate([{
       id:"",sku:"BAD-SUPPLIER",name:"Unknown Supplier Item",category:"Other",
       supplierName:"Not In System",unit:"pieces",stock:5,cost:10,sell:20
@@ -207,13 +221,35 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] });
     assert.equal((await snapshot()).pos.find(x => x.n === poN).items[0].cost, 105);
     assert.equal((await snapshot()).products.find(x => x.id === pid).stock, 0);
-    await api("/pos/" + poN + "/receive", "POST", { lines: [{ pid, qty: 12 }], by: "Store clerk" });
+    const grnDownload=await fetch(root+"/pos/"+poN+"/grn-template",{headers:{Cookie:cookie}});
+    assert.equal(grnDownload.status,200);
+    assert.match(grnDownload.headers.get("content-type")||"",/spreadsheetml/);
+    assert.ok(Buffer.from(await grnDownload.arrayBuffer()).includes(Buffer.from("Receive Now")));
+    const firstGRNWorkbook=buildGRNTemplate({code:poCode},[
+      {id:pid,sku:"BOX-001",name:"Paper Box",category:"Packaging",unit:"boxes",ordered:20,received:0}
+    ],{[pid]:12});
+    const grnExcelPreview=async book=>{
+      const response=await fetch(root+"/pos/"+poN+"/grn-import",{method:"POST",
+        headers:{Cookie:cookie,"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:book});
+      const data=await response.json();return {status:response.status,data};
+    };
+    const firstGRNPreview=await grnExcelPreview(firstGRNWorkbook);
+    assert.equal(firstGRNPreview.status,200,JSON.stringify(firstGRNPreview.data));
+    assert.deepEqual(firstGRNPreview.data.lines,[{pid,qty:12}]);
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).stock,0);
+    await api("/pos/" + poN + "/receive", "POST", { lines: firstGRNPreview.data.lines, by: "Store clerk" });
     let snap = await snapshot();
     assert.equal(snap.products.find(x => x.id === pid).stock, 12);
     assert.equal(snap.pos.find(x => x.n === poN).status, "Part received");
     await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] }, 409);
     const firstGrn = snap.grns[0].n;
-    await api("/pos/" + poN + "/receive", "POST", { lines: [{ pid, qty: 8 }], by: "Store clerk" });
+    assert.equal((await grnExcelPreview(firstGRNWorkbook)).status,422);
+    const secondGRNWorkbook=buildGRNTemplate({code:poCode},[
+      {id:pid,sku:"BOX-001",name:"Paper Box",category:"Packaging",unit:"boxes",ordered:20,received:12}
+    ],{[pid]:8});
+    const secondGRNPreview=await grnExcelPreview(secondGRNWorkbook);
+    assert.equal(secondGRNPreview.status,200,JSON.stringify(secondGRNPreview.data));
+    await api("/pos/" + poN + "/receive", "POST", { lines: secondGRNPreview.data.lines, by: "Store clerk" });
     snap = await snapshot();
     assert.equal(snap.products.find(x => x.id === pid).stock, 20);
     assert.equal(snap.pos.find(x => x.n === poN).status, "Received");
@@ -354,10 +390,45 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       const prior=(await api("/stock-history?from=2025-01-31&to=2025-01-31&pid="+pid)).data;
       assert.equal(prior.rows[0].reference,"MIDNIGHT_BEFORE");
       const full=await snapshot();
-      assert.ok(full.reportMovements.length>1000);
-      assert.equal(full.reportMovements.filter(x=>x.pid===pid).reduce((n,x)=>n+x.qty,0),full.products.find(x=>x.id===pid).stock);
-      assert.equal(full.reportMovements.filter(x=>x.pid===pid).reduce((n,x)=>n+x.damagedQty,0),full.products.find(x=>x.id===pid).damagedStock);
+      assert.equal(full.reportMovements.length,0,"Full movement history should not load on every page.");
+      const stockReport=(await api("/reports/stock-summary?pid="+pid)).data;
+      const reportRow=stockReport.rows[0];
+      assert.equal(reportRow[7],full.products.find(x=>x.id===pid).stock,"Stock report closing available matches actual stock.");
+      assert.equal(reportRow[10],full.products.find(x=>x.id===pid).damagedStock,"Stock report quarantine matches actual.");
+      const movementReport=(await api("/reports/movements?pid="+pid+"&from=2025-02-01&to=2025-02-01")).data;
+      assert.equal(movementReport.totalRecords,1011);
+      assert.equal(movementReport.rows.length,200);
+      assert.ok(movementReport.totalPages>1);
+      const movExcel=await fetch(root+"/reports/movements.xlsx?pid="+pid,{headers:{Cookie:cookie}});
+      assert.equal(movExcel.status,200);
+      assert.match(movExcel.headers.get("content-type")||"",/spreadsheetml/);
+      assert.equal(Buffer.from(await movExcel.arrayBuffer()).readUInt32LE(0),0x04034b50);
+      const generalExcel=await fetch(root+"/reports/xlsx",{method:"POST",headers:{Cookie:cookie,"Content-Type":"application/json"},
+        body:JSON.stringify(stockReport)});
+      assert.equal(generalExcel.status,200);
+      assert.equal(Buffer.from(await generalExcel.arrayBuffer()).readUInt32LE(0),0x04034b50);
     } finally {auditDb.close();}
+    // Missing products can be archived only after explicit approval and only
+    // when stock, quarantine and outstanding documents are all clear.
+    const archiveId=await idOf("/products","id",{
+      name:"Obsolete Packaging",sku:"ARCH-009",category:"Packaging",sid:a,
+      unit:"pieces",cost:1,sell:2,stock:0
+    });
+    const beforeArchive=await snapshot();
+    const archiveFile=buildInventoryTemplate(beforeArchive.products.filter(p=>p.active&&p.id!==archiveId).map(p=>({
+      id:p.id,sku:p.sku,name:p.name,category:p.category,
+      supplierName:beforeArchive.branches.find(b=>b.id===p.sid).name,
+      unit:p.unit,stock:p.stock,cost:p.cost,sell:p.sell
+    })));
+    const archivePreview=await previewExcel(archiveFile);
+    assert.equal(archivePreview.summary.archiveEligible,1);
+    assert.equal(archivePreview.canCommit,true);
+    const archiveResult=(await api("/inventory-import/commit","POST",{
+      token:archivePreview.token,confirm:true,archiveMissing:true
+    })).data;
+    assert.equal(archiveResult.archived,1);
+    assert.equal((await snapshot()).products.find(p=>p.id===archiveId).active,0);
+    assert.equal((await snapshot()).products.find(p=>p.id===bulkItem.id).active,1);
     // Order cancellation still keeps historical documents.
     await api("/customer-orders/" + co2n, "DELETE");
     assert.equal((await snapshot()).orders.find(x => x.n === co2n).status, "Cancelled");
