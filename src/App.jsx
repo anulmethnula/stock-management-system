@@ -29,7 +29,7 @@ const Icons = { home: LayoutDashboard, products: Package, branches: Building2, c
   pos: ClipboardList, grns: PackageCheck, quotes: FileText, orders: ShoppingBag, deliveries: Truck, history: History, reports: BarChart3, staff: Shield };
 const MENU = [
   ["home", "Home"], ["products", "Items"], ["branches", "Suppliers"],
-  ["pos", "Stock Requests (PO)"], ["grns", "Goods Received (GRN)"], ["customers", "Customers"],
+  ["pos", "Stock Requests"], ["grns", "Goods Received"], ["customers", "Customers"],
   ["quotes", "Quotations"], ["orders", "Customer Orders"], ["deliveries", "Deliveries"],
   ["history", "Stock History"], ["reports", "Reports"], ["staff", "Staff"]
 ];
