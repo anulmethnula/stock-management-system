@@ -12,11 +12,17 @@ import { registerQuotationRoutes } from "./quotations.js";
 
 const app = express();
 app.disable("x-powered-by");
+// Trust only a reverse proxy on the local machine (e.g. Caddy on the VPS).
+app.set("trust proxy","loopback");
 app.use(express.json({ limit: "8mb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
+  if(req.secure)res.setHeader("Strict-Transport-Security","max-age=31536000");
+  if(process.env.REQUIRE_HTTPS==="1"&&!req.secure){
+    res.status(426).json({error:"HTTPS is required. Open https://stock.supuncompanies.com instead."});return;
+  }
   next();
 });
 const today = () => new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -101,7 +107,7 @@ app.post("/api/login", (req, res) => {
     db.prepare("INSERT INTO sessions(token_hash,staff_id,expires_at) VALUES(?,?,?)")
       .run(tokenHash(token), user.id, Date.now() + maxAge);
     res.cookie(cookieName, token, {
-      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1", maxAge
+      httpOnly: true, sameSite: "strict", path: "/", secure: process.env.COOKIE_SECURE === "1" || req.secure, maxAge
     });
     res.json({ user: publicUser(user) });
   } catch (e) {
