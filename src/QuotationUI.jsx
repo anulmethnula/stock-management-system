@@ -3,7 +3,7 @@ import {FileText,Plus,Eye,Pencil,Send,Check,Printer,ArrowRight,Search,ShoppingBa
   X,CalendarDays,ClipboardCheck,Package,ShieldCheck,ChevronLeft,ChevronRight,Info,RotateCcw} from "lucide-react";
 
 const money=value=>"Rs "+Number(value||0).toLocaleString("en-LK",{minimumFractionDigits:2,maximumFractionDigits:2});
-const localDate=(days=0)=>{const x=new Date();x.setDate(x.getDate()+days);return [x.getFullYear(),String(x.getMonth()+1).padStart(2,"0"),String(x.getDate()).padStart(2,"0")].join("-");};
+const localDate=(days=0)=>{const date=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());const x=new Date(date+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+days);return x.toISOString().slice(0,10);};
 const displayStatus=q=>(q.status==="Sent"||q.status==="Approved")&&q.validUntil<localDate()?"Expired":q.status;
 const total=q=>q.items.reduce((sum,l)=>sum+l.qty*l.price,0);
 function QuotationModal({title,sub,close,children,wide=true}){
