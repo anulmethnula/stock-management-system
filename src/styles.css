@@ -400,11 +400,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 .text-button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent);font-size:12px;font-weight:800;padding:7px}
 .text-button:hover{text-decoration:underline}
 .form-item-list{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:14px;max-height:360px;overflow-y:auto}
-.grn-entry-table{margin-top:14px;border:1px solid var(--line);border-radius:14px;overflow:auto;max-height:390px}
-.grn-entry-row{display:grid;grid-template-columns:minmax(210px,1.5fr) 90px 90px 105px 140px 100px;gap:12px;align-items:center;min-width:790px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:11px}
+.grn-receive-modal{width:min(980px,100%);padding:20px 26px}
+.grn-receive-modal .modal-head{margin-bottom:10px}
+.grn-receive-modal .modal-head .mute{line-height:1.4}
+.grn-receive-modal .notice{margin:9px 0;padding:9px 12px}
+.grn-receive-modal label:not(.checkline):not(.file-picker):not(.search):not(.tiny-price){margin-top:10px}
+.grn-receive-modal input,.grn-receive-modal textarea{min-height:38px}
+.grn-receive-modal textarea{height:58px;min-height:58px}
+.grn-receive-modal .order-total{margin-top:9px;padding:10px 13px}
+.grn-receive-modal .form-actions{margin-top:13px}
+.grn-bulk-actions{display:flex;align-items:center;gap:9px;margin-top:8px;flex-wrap:wrap}
+.grn-bulk-actions .btn{margin:0}.grn-bulk-actions>span{margin-left:auto;color:var(--muted);font-size:10px}
+.grn-entry-table{margin-top:9px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.grn-entry-row{display:grid;grid-template-columns:minmax(180px,1.55fr) minmax(68px,.65fr) minmax(68px,.65fr) minmax(82px,.8fr) minmax(125px,1fr) minmax(78px,.7fr);gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);font-size:11px}
 .grn-entry-row:last-child{border-bottom:0}.grn-entry-row:not(.grn-entry-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
 .grn-entry-head{position:sticky;top:0;z-index:1;background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.06em;font-weight:800}
 .grn-remaining,.grn-stock-after strong{color:var(--accent)}.grn-stock-after strong{font-size:15px}
+@media(max-width:760px){.grn-bulk-actions{align-items:stretch}.grn-bulk-actions .btn{flex:1}.grn-bulk-actions>span{width:100%;margin:0}.grn-entry-table{border:0;overflow:visible;max-height:none}.grn-entry-head{display:none}.grn-entry-row:not(.grn-entry-head){grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--card)}.grn-entry-row .inventory-item{grid-column:1/-1}.grn-entry-row:not(.grn-entry-head)>:nth-child(n+2)::before{display:block;margin-bottom:3px;color:var(--muted);font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.grn-entry-row:not(.grn-entry-head)>:nth-child(2)::before{content:"Ordered"}.grn-entry-row:not(.grn-entry-head)>:nth-child(3)::before{content:"Received"}.grn-entry-row:not(.grn-entry-head)>:nth-child(4)::before{content:"Still expected"}.grn-entry-row:not(.grn-entry-head)>:nth-child(5)::before{content:"Receive now"}.grn-entry-row:not(.grn-entry-head)>:nth-child(6)::before{content:"Stock after"}}
 .form-item{display:flex;gap:11px;align-items:center;padding:13px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .form-item:last-child{border-bottom:0}
 .form-item strong,.form-item small{display:block}

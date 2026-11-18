@@ -824,6 +824,8 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
     return {...l,p,max:Math.max(0,max),remaining:before};
   });
   const lines=options.filter(l=>number(q[l.pid])>0).map(l=>({pid:l.pid,qty:number(q[l.pid])}));
+  const receiveAll=()=>setQ(Object.fromEntries(options.filter(l=>l.max>0).map(l=>[l.pid,l.max])));
+  const resetQuantities=()=>setQ({});
   const destination=isGRN?"/pos/"+doc.n+"/receive":isReturn?"/returns":"/customer-orders/"+doc.n+"/dispatch";
   const label=isGRN?"Save GRN and add stock":isReturn?"Save return and add stock":"Create delivery and reduce stock";
   const hint=isGRN?"Enter ONLY what actually arrived. Stock increases when saved.":isReturn?
@@ -831,16 +833,17 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
   const handle=e=>{e.preventDefault();action(destination,"POST",isReturn?{deliveryN:doc.n,lines,note}:{lines,note,by},
     isGRN?"GRN saved — stock increased.":isReturn?"Customer return saved — stock increased.":"Delivery saved — stock decreased.",
     isGRN?"grns":"deliveries");};
-  return <Modal wide title={title} sub={hint} close={close}>
+  return <Modal wide className={isGRN?"grn-receive-modal":""} title={title} sub={hint} close={close}>
     <form onSubmit={handle}>
       <div className="notice"><Info size={19}/> {isGRN?"From PO":isReturn?"From delivery":"From customer order"}: <strong>{doc.id}</strong></div>
-      {isGRN?<div className="grn-entry-table"><div className="grn-entry-row grn-entry-head"><span>Item</span><span>Ordered</span><span>Received</span><span>Still expected</span><span>Receive now</span><span>Stock after</span></div>
+      {isGRN?<><div className="grn-bulk-actions"><button className="btn" type="button" onClick={receiveAll} disabled={!options.some(l=>l.max>0)}><PackageCheck size={17}/> Receive All</button><button className="btn ghost" type="button" onClick={resetQuantities} disabled={!lines.length}><RotateCcw size={16}/> Reset Quantities</button><span>Fill remaining quantities, then review before saving.</span></div>
+      <div className="grn-entry-table"><div className="grn-entry-row grn-entry-head"><span>Item</span><span>Ordered</span><span>Received</span><span>Still expected</span><span>Receive now</span><span>Stock after</span></div>
         {options.map(l=>{const receive=number(q[l.pid]);return <div className="grn-entry-row" key={l.pid}>
           <div className="inventory-item"><Picture p={l.p}/><span><strong>{l.p?.name}</strong><small>{l.p?.sku||"No item code"}</small></span></div>
           <strong>{l.qty} {l.p?.unit}</strong><span>{l.received||0} {l.p?.unit}</span><strong className="grn-remaining">{l.remaining} {l.p?.unit}</strong>
           <div>{l.max>0?<Qty value={receive} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">Complete</Pill>}</div>
           <span className="grn-stock-after"><strong>{(l.p?.stock||0)+receive}</strong> {l.p?.unit}</span>
-        </div>})}</div>:
+        </div>})}</div></>:
       <div className="form-item-list">{options.map(l=><div className="form-item" key={l.pid}>
         <Picture p={l.p}/><div className="grow"><strong>{l.p?.name}</strong>
           <small>{isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small></div>
@@ -849,7 +852,7 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
       {isGRN&&<div className="order-total"><span>{lines.length} item{lines.length===1?"":"s"} selected</span><strong>{lines.reduce((sum,l)=>sum+l.qty,0)} units to receive</strong></div>}
       {!isReturn&&<><label>{isGRN?"Received by":"Sent by"}</label><input value={by} onChange={e=>setBy(e.target.value)} placeholder="Your name (optional — login name is used if empty)"/></>}
       <label>{isReturn?"Why are the goods being returned? *":"Notes (optional)"}</label>
-      <textarea rows={3} required={isReturn} value={note} onChange={e=>setNote(e.target.value)} placeholder={isReturn?"Example: Damaged or extra goods":"Optional delivery notes"}/>
+      <textarea rows={isGRN?2:3} required={isReturn} value={note} onChange={e=>setNote(e.target.value)} placeholder={isReturn?"Example: Damaged or extra goods":"Optional delivery notes"}/>
       <Controls busy={busy} close={close} valid={lines.length>0&&(!isReturn||!!note.trim())} label={label}/>
     </form>
   </Modal>;
