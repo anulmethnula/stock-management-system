@@ -222,3 +222,5 @@ CREATE INDEX IF NOT EXISTS idx_movements_date ON stock_movements(created_at,id);
 CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id,id DESC);
 CREATE INDEX IF NOT EXISTS idx_customer_orders_customer ON customer_orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_order ON deliveries(order_id);
+
+CREATE INDEX IF NOT EXISTS idx_movements_reference ON stock_movements(reference);
