@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS products (
   cost REAL NOT NULL DEFAULT 0,
   sale_price REAL NOT NULL DEFAULT 0,
   stock INTEGER NOT NULL DEFAULT 0,
+  damaged_stock INTEGER NOT NULL DEFAULT 0 CHECK(damaged_stock >= 0),
   reorder INTEGER NOT NULL DEFAULT 5,
   active INTEGER NOT NULL DEFAULT 1
 );
@@ -171,12 +172,14 @@ CREATE TABLE IF NOT EXISTS return_lines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   return_id INTEGER NOT NULL REFERENCES customer_returns(id),
   product_id INTEGER NOT NULL REFERENCES products(id),
-  qty INTEGER NOT NULL
+  qty INTEGER NOT NULL,
+  condition TEXT NOT NULL DEFAULT 'sellable' CHECK(condition IN ('sellable','quarantine'))
 );
 CREATE TABLE IF NOT EXISTS stock_movements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL REFERENCES products(id),
   qty_change INTEGER NOT NULL,
+  damaged_change INTEGER NOT NULL DEFAULT 0,
   event_type TEXT NOT NULL,
   reference TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
@@ -196,6 +199,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   staff_id INTEGER NOT NULL REFERENCES staff(id),
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY);
+CREATE INDEX IF NOT EXISTS idx_movements_date ON stock_movements(created_at,id);
 CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id,id DESC);
 CREATE INDEX IF NOT EXISTS idx_customer_orders_customer ON customer_orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_deliveries_order ON deliveries(order_id);

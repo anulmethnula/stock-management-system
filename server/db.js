@@ -52,33 +52,25 @@ addColumn("products", "sku", "TEXT");
 addColumn("products", "category", "TEXT NOT NULL DEFAULT 'Other'");
 addColumn("products", "sale_price", "REAL NOT NULL DEFAULT 0");
 addColumn("products", "active", "INTEGER NOT NULL DEFAULT 1");
+addColumn("products", "damaged_stock", "INTEGER NOT NULL DEFAULT 0 CHECK(damaged_stock >= 0)");
+addColumn("return_lines", "condition", "TEXT NOT NULL DEFAULT 'sellable' CHECK(condition IN ('sellable','quarantine'))");
+addColumn("stock_movements", "damaged_change", "INTEGER NOT NULL DEFAULT 0");
 addColumn("grns", "status", "TEXT NOT NULL DEFAULT 'Active'");
 addColumn("staff", "permissions", "TEXT NOT NULL DEFAULT '{}'");
 
-// Seed the category catalogue without changing any existing product record.
-const defaultCategories = ["Helmets", "Electrical", "Safety gear", "Raw materials", "Packaging", "Tools", "Other"];
-const insertCategory = db.prepare("INSERT OR IGNORE INTO product_categories(name) VALUES(?)");
-defaultCategories.forEach(name => insertCategory.run(name));
-db.prepare("SELECT DISTINCT TRIM(category) name FROM products WHERE TRIM(COALESCE(category,''))<>''").all().forEach(row => insertCategory.run(row.name));
-
-// Replace the original grocery demo catalogue with factory-relevant examples.
-const legacyProducts = [
-  ["Rice 5kg bag", "Safety helmet shell", "HEL-SHELL-001", "Helmets", "🪖", "pieces"],
-  ["Fresh milk 1L", "Copper wire 2.5mm", "ELE-WIRE-25", "Electrical", "🔌", "rolls"],
-  ["Eggs tray (30)", "32A circuit breaker", "ELE-MCB-32", "Electrical", "⚡", "pieces"],
-  ["Paper bags", "Helmet chin strap", "HEL-STRAP-001", "Helmets", "🧵", "bundles"],
-  ["Cardboard boxes", "Helmet packaging box", "PKG-BOX-001", "Packaging", "📦", "boxes"],
-  ["Dish soap", "Clear helmet visor", "HEL-VISOR-CLR", "Helmets", "🥽", "pieces"],
-  ["Tissue rolls", "Cut-resistant safety gloves", "PPE-GLOVE-001", "Safety gear", "🧤", "pairs"]
-];
-for (const [oldName, name, sku, category, emoji, unit] of legacyProducts) {
-  db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,unit=?,image=NULL WHERE name=?").run(name, sku, category, emoji, unit, oldName);
-}
-db.prepare("UPDATE products SET category='Helmets' WHERE sku LIKE 'HEL-%' AND category='Other'").run();
-db.prepare("UPDATE products SET category='Electrical' WHERE sku LIKE 'ELE-%' AND category='Other'").run();
-db.prepare("UPDATE products SET category='Packaging' WHERE sku LIKE 'PKG-%' AND category='Other'").run();
-db.prepare("UPDATE products SET category='Safety gear' WHERE sku LIKE 'PPE-%' AND category='Other'").run();
-
+// Seed defaults once. Never rewrite product names, SKUs or categories by matching demo data.
+db.transaction(() => {
+  const migration="category-defaults-v1";
+  const insert=db.prepare("INSERT OR IGNORE INTO product_categories(name) VALUES(?)");
+  if (!db.prepare("SELECT 1 FROM schema_migrations WHERE name=?").get(migration)) {
+    if (!db.prepare("SELECT 1 FROM product_categories LIMIT 1").get()) {
+      ["Helmets","Electrical","Safety gear","Raw materials","Packaging","Tools","Other"].forEach(name=>insert.run(name));
+    }
+    db.prepare("INSERT INTO schema_migrations(name) VALUES(?)").run(migration);
+  }
+  db.prepare("SELECT DISTINCT TRIM(category) name FROM products WHERE TRIM(COALESCE(category,''))<>''").all().forEach(row=>insert.run(row.name));
+})();
+    
 export function passwordHash(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   return `${salt}:${crypto.scryptSync(password, salt, 64).toString("hex")}`;
