@@ -501,12 +501,12 @@ export const grnHeaders=[
   "Product ID","Item Code","Item Name","Category","Unit",
   "PO Ordered","Already Received","Still Expected","Receive Now","PO Reference"
 ];
-export function buildGRNTemplate(po,items){
+export function buildGRNTemplate(po,items,receiveNowById={}){
   if(items.length>200)throw new Error("GRN supports at most 200 different items.");
   return buildTableWorkbook({
     sheetName:"Goods Received",headers:grnHeaders,editIndex:8,
     rows:items.map(l=>[
-      l.id,l.sku||"",l.name,l.category,l.unit,l.ordered,l.received,l.ordered-l.received,"",po.code
+      l.id,l.sku||"",l.name,l.category,l.unit,l.ordered,l.received,l.ordered-l.received,receiveNowById[l.id]??"",po.code
     ]),
     guide:[
       ["PO",po.code],["Supplier",po.supplierName||""],
