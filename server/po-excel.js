@@ -413,3 +413,153 @@ export function parseInventoryUpload(buffer){
   if(!selected.length&&!errors.length)errors.push("No item rows found. Fill in the Current Stock sheet first.");
   return {rows:selected,errors};
 }
+
+
+// General-purpose real XLSX exporter. Numeric cells stay numeric, text stays
+// inline text (including values beginning with "="), never executable formulae.
+const sheetColumn=index=>{
+  let out="",n=index+1;
+  while(n){n--;out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26);}
+  return out;
+};
+const sheetXmlText=(title,headers,rows,options={})=>{
+  const max=Math.max(1,headers.length),last=Math.max(2,rows.length+1);
+  const grid=[
+    '<row r="1" ht="36" customHeight="1">'+headers.map((name,j)=>xmlCell(sheetColumn(j)+"1",name,1)).join("")+"</row>"
+  ];
+  rows.forEach((values,i)=>{
+    const n=i+2;
+    grid.push('<row r="'+n+'" ht="22" customHeight="1">'+headers.map((_,j)=>{
+      const value=values[j]??"";
+      return xmlCell(sheetColumn(j)+n,value,j===options.editIndex?2:typeof value==="number"?3:0);
+    }).join("")+"</row>");
+  });
+  const widths=headers.map((header,i)=>{
+    const length=String(header).length;
+    return '<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+Math.min(45,Math.max(14,length+5))+'" customWidth="1"/>';
+  }).join("");
+  const validation=Number.isInteger(options.editIndex)
+    ?'<dataValidations count="1"><dataValidation type="whole" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid received quantity" error="Enter a positive whole number, or leave the cell empty." sqref="'+sheetColumn(options.editIndex)+'2:'+sheetColumn(options.editIndex)+last+'"><formula1>1</formula1><formula2>100000000</formula2></dataValidation></dataValidations>'
+    :"";
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +'<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    +'<sheetFormatPr defaultRowHeight="22"/><cols>'+widths+'</cols><sheetData>'+grid.join("")+'</sheetData>'
+    +'<autoFilter ref="A1:'+sheetColumn(max-1)+last+'"/>'+validation+'</worksheet>';
+};
+const sheetXmlStyles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  +'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+  +'<fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts>'
+  +'<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+  +'<fill><patternFill patternType="solid"><fgColor rgb="FF176448"/><bgColor indexed="64"/></patternFill></fill>'
+  +'<fill><patternFill patternType="solid"><fgColor rgb="FFE5F5EC"/><bgColor indexed="64"/></patternFill></fill></fills>'
+  +'<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+  +'<border><left style="thin"><color rgb="FFD0DFD8"/></left><right style="thin"><color rgb="FFD0DFD8"/></right>'
+  +'<top style="thin"><color rgb="FFD0DFD8"/></top><bottom style="thin"><color rgb="FFD0DFD8"/></bottom></border></borders>'
+  +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+  +'<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="1"/>'
+  +'<xf numFmtId="0" fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
+  +'<xf numFmtId="1" fontId="0" fillId="3" borderId="1" applyFill="1" applyNumberFormat="1"/>'
+  +'<xf numFmtId="2" fontId="0" fillId="0" borderId="1" applyNumberFormat="1"/>'
+  +'</cellXfs></styleSheet>';
+export function buildTableWorkbook({sheetName="Report",headers,rows,guide=[],editIndex=null}){
+  if(!Array.isArray(headers)||!headers.length||headers.length>35)throw new Error("Excel columns must be between 1 and 35.");
+  if(!Array.isArray(rows)||rows.length>50000)throw new Error("Export is too large. Choose a shorter date range (50,000 rows maximum).");
+  const guideHeaders=["Instruction","Details"];
+  const guideXML=sheetXmlText("How to Fill",guideHeaders,guide);
+  const book='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    +'<sheets><sheet name="'+escapeXML(sheetName.slice(0,31))+'" sheetId="1" r:id="rId1"/><sheet name="How to Fill" sheetId="2" r:id="rId2"/></sheets></workbook>';
+  return buildZip([
+    ["[Content_Types].xml",'<?xml version="1.0" encoding="UTF-8"?>'
+      +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      +'<Default Extension="xml" ContentType="application/xml"/>'
+      +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      +'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      +'<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      +'</Types>'],
+    ["_rels/.rels",'<?xml version="1.0" encoding="UTF-8"?>'
+      +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      +'</Relationships>'],
+    ["xl/workbook.xml",book],
+    ["xl/_rels/workbook.xml.rels",'<?xml version="1.0" encoding="UTF-8"?>'
+      +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+      +'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+      +'<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      +'</Relationships>'],
+    ["xl/worksheets/sheet1.xml",sheetXmlText(sheetName,headers,rows,{editIndex})],
+    ["xl/worksheets/sheet2.xml",guideXML],
+    ["xl/styles.xml",sheetXmlStyles]
+  ]);
+}
+
+export const grnHeaders=[
+  "Product ID","Item Code","Item Name","Category","Unit",
+  "PO Ordered","Already Received","Still Expected","Receive Now","PO Reference"
+];
+export function buildGRNTemplate(po,items){
+  if(items.length>200)throw new Error("GRN supports at most 200 different items.");
+  return buildTableWorkbook({
+    sheetName:"Goods Received",headers:grnHeaders,editIndex:8,
+    rows:items.map(l=>[
+      l.id,l.sku||"",l.name,l.category,l.unit,l.ordered,l.received,l.ordered-l.received,"",po.code
+    ]),
+    guide:[
+      ["PO",po.code],["Supplier",po.supplierName||""],
+      ["1","Do not change Product IDs, Item Codes, names, categories or reference quantities."],
+      ["2","Enter actual goods received NOW in column I (Receive Now); leave other rows blank."],
+      ["3","Receive Now must be a positive whole number and cannot exceed Still Expected."],
+      ["4","Upload to the same PO GRN form. Review values then click Save GRN to update stock."],
+      ["5","Uploading alone NEVER changes stock. Partial receipts are allowed."],
+      ["6","If any goods were received after downloading this file, download a fresh GRN template."],
+      ["7","Never upload the 11-column Items Migration sheet or the 10-column PO Request sheet here."]
+    ]
+  });
+}
+export function parseGRNUpload(buffer,po,items){
+  const files=unzipNeeded(buffer),sharedText=files.get("xl/sharedStrings.xml")||"";
+  const shared=[...sharedText.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map(m=>
+    [...m[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(t=>unescapeXML(t[1])).join(""));
+  const byId=new Map(items.map(x=>[x.id,x])),rows=[],seen=new Set(),errors=[];
+  const sheet=files.get("xl/worksheets/sheet1.xml");
+  const all=[...sheet.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)];
+  if(all.length>210)throw Object.assign(new Error("GRN template contains too many rows."),{status:422});
+  for(const m of all){
+    const v={};
+    for(const c of m[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
+      const col=/\br="([A-Z]+)\d+"/.exec(c[1])?.[1];
+      if(col&&col.length===1&&"ABCDEFGHIJ".includes(col))
+        v[col]=xmlText({attrs:c[1],body:c[2]||""},shared);
+    }
+    if(Number(m[1])===1){
+      if(grnHeaders.some((name,i)=>String(v["ABCDEFGHIJ"[i]]||"").trim()!==name))
+        throw Object.assign(new Error("Wrong GRN Excel columns. Download the latest GRN template for this PO."),{status:422});
+      continue;
+    }
+    const raw=String(v.I??"").trim();
+    if(raw===""||raw==="0")continue;
+    const n=Number(raw),pid=Number(v.A),item=byId.get(pid);
+    if(!Number.isSafeInteger(n)||n<=0||n>100000000){errors.push("Row "+m[1]+": Receive Now must be a positive whole number.");continue;}
+    if(!item){errors.push("Row "+m[1]+": Product does not belong to this PO.");continue;}
+    if(seen.has(pid)){errors.push("Row "+m[1]+": Duplicate item in GRN Excel.");continue;}
+    seen.add(pid);
+    if(String(v.J||"").trim()!==po.code||
+      String(v.B??"").trim()!==String(item.sku||"").trim()||
+      String(v.C??"").trim()!==item.name||String(v.D??"").trim()!==item.category||
+      String(v.E??"").trim()!==item.unit||
+      Number(v.F)!==item.ordered||Number(v.G)!==item.received||
+      Number(v.H)!==item.ordered-item.received){
+      errors.push("Row "+m[1]+": This PO or item has changed. Download a fresh GRN template.");continue;
+    }
+    if(n>item.ordered-item.received){errors.push("Row "+m[1]+": Only "+(item.ordered-item.received)+" units remain for "+item.name+".");continue;}
+    rows.push({pid,qty:n});
+  }
+  if(!all.length||!all.some(m=>Number(m[1])===1))errors.push("GRN header row is missing.");
+  if(!rows.length&&!errors.length)errors.push("Enter received quantities in column I (Receive Now) first.");
+  if(errors.length)throw Object.assign(new Error("Fix the GRN Excel:\n"+errors.slice(0,10).join("\n")),{status:422});
+  return rows;
+}
