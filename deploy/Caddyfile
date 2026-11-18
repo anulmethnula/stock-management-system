@@ -1,0 +1,12 @@
+# Deploy on the VPS that serves stock.supuncompanies.com.
+# Point DNS to the VPS first, open public TCP 80 and 443, install Caddy.
+# Keep the Node/Express app bound to 127.0.0.1:3001.
+stock.supuncompanies.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:3001
+  header {
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}
