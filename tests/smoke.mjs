@@ -6,7 +6,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { buildPOTemplate } from "../server/po-excel.js";
+import { buildPOTemplate, buildInventoryTemplate } from "../server/po-excel.js";
 
 async function unusedPort() {
   const server = net.createServer();
@@ -59,6 +59,9 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const b = await idOf("/branches", "id", { name: "External Supplier B", contact: "Manager B", phone: "077000002", location: "Galle", supplier_type: "external" });
     await api("/branches/" + a, "PUT", { name: "Supun Central", contact: "Manager A", phone: "077000001", phone2: "071000001", location: "Colombo", notes: "Use rear entrance", supplier_type: "internal", active: 1 });
     const cid = await idOf("/customers", "id", { name: "Test Customer Ltd", contact: "Buyer", phone: "077999999", phone2: "071999999", address: "Office", notes: "Call before delivery", customer_type: "external" });
+    // Categories must come from users or their uploaded Excel, not demo defaults.
+    assert.equal((await snapshot()).categories.length,0);
+    await idOf("/categories","id",{name:"Packaging"});
     const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
     // Categories persist, reject case-insensitive duplicates, and cannot be archived while assigned.
@@ -73,6 +76,72 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.ok(categorySnapshot.categories.some(x=>x.id===categoryId&&x.name==="Factory Consumables"));
     await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:0});
     await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:1});
+    // One reusable Items bulk template: create, change final count, block double import.
+    const inventoryFile=buildInventoryTemplate([{
+      id:"",sku:"BULK-AC",name:"CAMY Test AC",category:"Air Conditioners",
+      supplierName:"Supun Central",unit:"pieces",stock:12,cost:900,sell:1200
+    }]);
+    const inventoryDownload=await fetch(root+"/inventory-template.xlsx",{headers:{Cookie:cookie}});
+    assert.equal(inventoryDownload.status,200);
+    assert.match(inventoryDownload.headers.get("content-type")||"",/spreadsheetml/);
+    const currentFile=Buffer.from(await inventoryDownload.arrayBuffer());
+    assert.equal(currentFile.readUInt32LE(0),0x04034b50);
+    const previewExcel=async book=>{
+      const response=await fetch(root+"/inventory-import/preview",{
+        method:"POST",headers:{Cookie:cookie,"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:book
+      });
+      const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));
+      return result;
+    };
+    const firstPreview=await previewExcel(inventoryFile);
+    assert.equal(firstPreview.canCommit,true);
+    assert.equal(firstPreview.summary.newCount,1);
+    assert.equal(firstPreview.summary.categoryCount,1);
+    assert.equal((await snapshot()).products.some(x=>x.sku==="BULK-AC"),false);
+    const done=(await api("/inventory-import/commit","POST",{token:firstPreview.token,confirm:true})).data;
+    assert.match(done.code,/^BULK-/);
+    let bulkState=await snapshot();
+    const bulkItem=bulkState.products.find(x=>x.sku==="BULK-AC");
+    assert.equal(bulkItem.stock,12);
+    assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
+    const twice=await previewExcel(inventoryFile);
+    assert.equal(twice.canCommit,false);
+    assert.match(twice.errors.join(" "),/already been imported|already match/);
+    // A later physical recount may legitimately use the same target quantities
+    // after another transaction changed the real stock. Preview must show a delta.
+    await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
+    const recount=await previewExcel(inventoryFile);
+    assert.equal(recount.canCommit,true);
+    assert.equal(recount.summary.stockDelta,-2);
+    await api("/inventory-import/commit","POST",{token:recount.token,confirm:true});
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,12);
+    await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
+    const changedFile=buildInventoryTemplate([{
+      id:bulkItem.id,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
+      supplierName:"Supun Central",unit:"pieces",stock:15,cost:800,sell:1250
+    }]);
+    const stale=await previewExcel(changedFile);
+    await api("/adjustments","POST",{pid:bulkItem.id,change:1,reason:"Stock changed after preview"});
+    await api("/inventory-import/commit","POST",{token:stale.token,confirm:true},409);
+    await api("/adjustments","POST",{pid:bulkItem.id,change:-1,reason:"Restore original physical count"});
+    const corrected=await previewExcel(changedFile);
+    assert.equal(corrected.summary.updateCount,1);
+    assert.equal(corrected.summary.stockDelta,3);
+    await api("/inventory-import/commit","POST",{token:corrected.token,confirm:true});
+    bulkState=await snapshot();
+    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).name,"CAMY Updated AC");
+    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).stock,15);
+    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).cost,800);
+    assert.equal(bulkState.categories.find(x=>x.name==="Appliances").active,1);
+    assert.equal(bulkState.products.filter(x=>x.sku?.toLowerCase()==="bulk-ac").length,1);
+    assert.equal(bulkState.movements.filter(x=>x.reference===done.code).length,1);
+    const wrongSupplier=await previewExcel(buildInventoryTemplate([{
+      id:"",sku:"BAD-SUPPLIER",name:"Unknown Supplier Item",category:"Other",
+      supplierName:"Not In System",unit:"pieces",stock:5,cost:10,sell:20
+    }]));
+    assert.equal(wrongSupplier.canCommit,false);
+    assert.match(wrongSupplier.errors.join(" "),/must match one active supplier/);
+
     // Quote -> recorded customer approval -> exactly one CO, with prices preserved.
     const expiry=new Date();expiry.setDate(expiry.getDate()+14);
     const validUntil=[expiry.getFullYear(),String(expiry.getMonth()+1).padStart(2,"0"),String(expiry.getDate()).padStart(2,"0")].join("-");

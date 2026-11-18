@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import db, { createDatabaseBackup, passwordHash, passwordMatches } from "./db.js";
 import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
+import { registerInventoryImportRoutes } from "./inventory-import.js";
 import { registerQuotationRoutes } from "./quotations.js";
 
 const app = express();
@@ -281,7 +282,7 @@ app.delete("/api/customers/:id", requireEdit("customers"), run(req => {
 function productFields(b) {
   const sid = ident(b.sid);
   check(find("suppliers", sid).active, "Choose an active branch.");
-  const category=required(b.category||"Other","category",40);
+  const category=required(b.category,"category",40);
   check(db.prepare("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND active=1").get(category),"Choose an active category.",409);
   const img = b.img && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(b.img) && b.img.length < 3000000 ? b.img : null;
   return [required(b.name, "item name"), str(b.sku, 60) || null, category, str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
@@ -289,6 +290,8 @@ function productFields(b) {
 }
 app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
   const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock");
+  if(b.sku)check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE LIMIT 1").get(str(b.sku,60)),
+    "Item Code already exists. Edit the existing item instead.",409);
   check(!opening||cleanPermissions(req.user.permissions,req.user.role).stock_adjustments==="edit","Opening stock requires stock correction permission.",403);
   const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
@@ -298,6 +301,8 @@ app.post("/api/products", requireEdit("products"), run(req => transaction(() => 
 app.put("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id, b = req.body || {};
   const fields = productFields(b);
+  if(b.sku)check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE AND id<>? LIMIT 1").get(str(b.sku,60),id),
+    "Item Code already belongs to another product.",409);
   db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
     .run(...fields, b.active === 0 ? 0 : 1, id);
   // Stock is deliberately not editable here. Use adjustment for an auditable change.
@@ -606,7 +611,8 @@ app.post("/api/quarantine",requireEdit("stock_adjustments"),run(req=>transaction
   return {ok:true};
 })));
 
- // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
+ registerInventoryImportRoutes(app,{db,express,requireEdit,run,transaction,check,changeStock,logStock});
+// Admin controls: no password hashes in responses; disable instead of deleting audit actors.
 app.get("/api/admin/database-backup",admin,(req,res)=>{
   const stamp=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date()).replaceAll(":","-").replace(" ","_");
   const filename=`StockEasy_Backup_${stamp}.db`,temporary=path.join(os.tmpdir(),`stockeasy-${crypto.randomUUID()}.db`);

@@ -199,6 +199,24 @@ CREATE TABLE IF NOT EXISTS sessions (
   staff_id INTEGER NOT NULL REFERENCES staff(id),
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS inventory_import_previews (
+  token TEXT PRIMARY KEY,
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
+  fingerprint TEXT NOT NULL,
+  plan_json TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inventory_import_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fingerprint TEXT NOT NULL UNIQUE,
+  staff_id INTEGER NOT NULL REFERENCES staff(id),
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  new_count INTEGER NOT NULL,
+  updated_count INTEGER NOT NULL,
+  stock_delta INTEGER NOT NULL,
+  details_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_import_previews_expiry ON inventory_import_previews(expires_at);
 CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY);
 CREATE INDEX IF NOT EXISTS idx_movements_date ON stock_movements(created_at,id);
 CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id,id DESC);
