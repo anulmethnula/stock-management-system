@@ -62,46 +62,80 @@ function buildZip(entries) {
   eocd.writeUInt32LE(offset,16);
   return Buffer.concat([...local,...central,eocd]);
 }
-const headers=["Product ID","Item Code","Item Name","Unit","Quantity","Unit Cost (Rs)"];
+// Purchase order template is intentionally different from the 11-column
+// inventory count template: quantities here are NEW REQUESTS, not final stock.
+export const poHeaders=[
+  "Product ID","Item Code","Item Name","Category","Usual Supplier",
+  "Unit","Available Stock","Order Quantity","Unit Cost (Rs)","Total Cost (Rs)"
+];
+const PO_COLS="ABCDEFGHIJ";
 export function buildPOTemplate(products, quantitiesById = {}) {
-  if(products.length>1000) throw new Error("Too many items to export. Contact the admin.");
-  const rowCount=Math.max(2,products.length+1);
-  const rows=['<row r="1" ht="27" customHeight="1">'+headers.map((value,i)=>xmlCell("ABCDEF"[i]+"1",value,1)).join("")+'</row>'];
+  if(products.length>1000)throw new Error("Too many items to export. Please split the catalogue.");
+  const lastRow=Math.max(2,products.length+1),rows=[
+    '<row r="1" ht="36" customHeight="1">'+poHeaders.map((v,i)=>xmlCell(PO_COLS[i]+"1",v,1)).join("")+"</row>"
+  ];
   products.forEach((p,i)=>{
-    const n=i+2;
-    rows.push('<row r="'+n+'" ht="22" customHeight="1">'
-      +xmlCell("A"+n,p.id,0)
-      +xmlCell("B"+n,p.sku||"",0)
-      +xmlCell("C"+n,p.name,0)
-      +xmlCell("D"+n,p.unit||"pieces",0)
-      +(quantitiesById[p.id] !== undefined ? xmlCell("E"+n,Number(quantitiesById[p.id]),2) : '<c r="E'+n+'" s="2"/>')
-      +xmlCell("F"+n,Number(p.cost)||0,3)
-      +'</row>');
+    const row=i+2;
+    const reference=[p.id,p.sku||"",p.name,p.category||"",p.supplierName||"",p.unit||"pieces",Number(p.stock)||0];
+    const qty=quantitiesById[p.id];
+    const inputs=reference.map((v,col)=>xmlCell(PO_COLS[col]+row,v,0)).join("")
+      +(qty!==undefined?xmlCell("H"+row,Number(qty),2):'<c r="H'+row+'" s="2"/>')
+      +xmlCell("I"+row,Number(p.cost)||0,3)
+      +'<c r="J'+row+'" s="4"><f>IF(OR(H'+row+'="",H'+row+'=0),"",H'+row+'*I'+row+')</f></c>';
+    rows.push('<row r="'+row+'" ht="23" customHeight="1">'+inputs+"</row>");
   });
+  const widths=[14,20,40,23,31,16,19,19,21,22];
+  const columns=widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join("");
+  const validations=[
+    '<dataValidation type="whole" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid PO quantity" error="Enter a whole number from 1 to 100000000, or leave blank." sqref="H2:H'+lastRow+'"><formula1>1</formula1><formula2>100000000</formula2></dataValidation>',
+    '<dataValidation type="decimal" operator="between" allowBlank="0" showErrorMessage="1" errorTitle="Invalid buying price" error="Enter a non-negative unit cost." sqref="I2:I'+lastRow+'"><formula1>0</formula1><formula2>1000000000000</formula2></dataValidation>'
+  ].join("");
   const sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
     +'<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-    +'<sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="13" customWidth="1"/>'
-    +'<col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="38" customWidth="1"/>'
-    +'<col min="4" max="4" width="16" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/>'
-    +'<col min="6" max="6" width="21" customWidth="1"/></cols><sheetData>'+rows.join("")+'</sheetData>'
-    +'<autoFilter ref="A1:F'+rowCount+'"/></worksheet>';
+    +'<sheetFormatPr defaultRowHeight="22"/><cols>'+columns+'</cols><sheetData>'+rows.join("")+'</sheetData>'
+    +'<autoFilter ref="A1:J'+lastRow+'"/><dataValidations count="2">'+validations+'</dataValidations></worksheet>';
+  const guide=[
+    ["STOCKEASY — PURCHASE ORDER BULK REQUEST",""],
+    ["1. CHOOSE SUPPLIER","Choose the requested supplier/branch in the StockEasy PO form before uploading."],
+    ["2. GET LATEST ITEMS","Download this template again after adding or editing items or importing existing stock."],
+    ["3. ORDER QUANTITY","Fill ONLY column H (Order Quantity) for the items you want to request. Leave other quantities blank."],
+    ["4. UNIT COST","Column I is the proposed buying cost. Review it and update if needed."],
+    ["5. REFERENCE ONLY","Product ID, Code, Name, Category, Usual Supplier, Unit and Available Stock come from Items."],
+    ["6. AUTO TOTAL","Column J calculates Order Quantity × Unit Cost. Do not edit the formula."],
+    ["7. PREVIEW","Upload Excel; review the selected products, quantities and prices; save PO only after checking."],
+    ["8. STOCK UPDATE","Creating a PO does NOT change stock. Stock increases only when staff save a GRN for actual goods received."],
+    ["9. SUPPLIER NOTE","Usual Supplier is informational. You may request an item from another selected branch."],
+    ["10. LIMIT","Maximum 200 different items per purchase order. Split larger purchase orders."],
+    ["IMPORTANT","Do not upload the 11-column Current Stock Migration file here; it changes final physical counts, not PO requests."]
+  ];
+  const guideRows=guide.map((r,i)=>'<row r="'+(i+1)+'" ht="27" customHeight="1">'
+    +xmlCell("A"+(i+1),r[0],i===0?1:0)+xmlCell("B"+(i+1),r[1],0)+"</row>").join("");
+  const guideSheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +'<cols><col min="1" max="1" width="30" customWidth="1"/><col min="2" max="2" width="125" customWidth="1"/></cols>'
+    +'<sheetData>'+guideRows+'</sheetData></worksheet>';
   const styles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     +'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    +'<fonts count="2"><font><sz val="11"/><name val="Aptos"/></font>'
-    +'<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts>'
-    +'<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-    +'<fill><patternFill patternType="solid"><fgColor rgb="FF24694F"/><bgColor indexed="64"/></patternFill></fill></fills>'
-    +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    +'<fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts>'
+    +'<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    +'<fill><patternFill patternType="solid"><fgColor rgb="FF176448"/><bgColor indexed="64"/></patternFill></fill>'
+    +'<fill><patternFill patternType="solid"><fgColor rgb="FFE5F5EC"/><bgColor indexed="64"/></patternFill></fill>'
+    +'<fill><patternFill patternType="solid"><fgColor rgb="FFE8F1FD"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    +'<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+    +'<border><left style="thin"><color rgb="FFCBDDD3"/></left><right style="thin"><color rgb="FFCBDDD3"/></right>'
+    +'<top style="thin"><color rgb="FFCBDDD3"/></top><bottom style="thin"><color rgb="FFCBDDD3"/></bottom></border></borders>'
     +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    +'<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>'
-    +'<xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFont="1" applyFill="1"/>'
-    +'<xf numFmtId="1" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>'
-    +'<xf numFmtId="2" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs></styleSheet>';
+    +'<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="1"/>'
+    +'<xf numFmtId="0" fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
+    +'<xf numFmtId="1" fontId="0" fillId="3" borderId="1" applyNumberFormat="1" applyFill="1"/>'
+    +'<xf numFmtId="2" fontId="0" fillId="0" borderId="1" applyNumberFormat="1"/>'
+    +'<xf numFmtId="2" fontId="0" fillId="4" borderId="1" applyNumberFormat="1" applyFill="1"/></cellXfs>'
+    +'</styleSheet>';
   const book='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-    +'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-    +'<sheets><sheet name="Stock Request" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    +'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    +'<sheets><sheet name="Stock Request" sheetId="1" r:id="rId1"/><sheet name="How to Fill" sheetId="2" r:id="rId2"/></sheets>'
+    +'<calcPr calcId="0" fullCalcOnLoad="1"/></workbook>';
   return buildZip([
     ["[Content_Types].xml",'<?xml version="1.0" encoding="UTF-8"?>'
       +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -109,6 +143,7 @@ export function buildPOTemplate(products, quantitiesById = {}) {
       +'<Default Extension="xml" ContentType="application/xml"/>'
       +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
       +'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      +'<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
       +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
       +'</Types>'],
     ["_rels/.rels",'<?xml version="1.0" encoding="UTF-8"?>'
@@ -117,11 +152,13 @@ export function buildPOTemplate(products, quantitiesById = {}) {
       +'</Relationships>'],
     ["xl/workbook.xml",book],
     ["xl/_rels/workbook.xml.rels",'<?xml version="1.0" encoding="UTF-8"?>'
-      +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +'<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
       +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-      +'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      +'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+      +'<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
       +'</Relationships>'],
     ["xl/worksheets/sheet1.xml",sheet],
+    ["xl/worksheets/sheet2.xml",guideSheet],
     ["xl/styles.xml",styles]
   ]);
 }
@@ -181,51 +218,54 @@ export function parsePOUpload(buffer,products){
     const values={};
     for(const cell of m[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
       const col=/\br="([A-Z]+)\d+"/.exec(cell[1])?.[1];
-      if(col&&"ABCDEF".includes(col)&&col.length===1)
+      if(col&&PO_COLS.includes(col)&&col.length===1)
         values[col]=xmlText({attrs:cell[1],body:cell[2]||""},shared);
     }
     rows.push({number:Number(m[1]),values});
   }
   const header=rows.find(r=>r.number===1)?.values||{};
-  if(headers.some((name,i)=>String(header["ABCDEF"[i]]||"").trim()!==name))
-    throw new Error("Excel columns have changed. Download a fresh template and fill the Quantity column.");
+  if(poHeaders.some((name,i)=>String(header[PO_COLS[i]]||"").trim()!==name))
+    throw new Error("Wrong PO Excel columns. Download a fresh PO template from StockEasy. Do not use the Current Stock Migration template.");
   const selected=[],errors=[],seen=new Set();
   const byId=new Map(products.map(p=>[Number(p.id),p]));
+  const norm=v=>String(v??"").trim().toLocaleLowerCase("en");
   for(const row of rows.filter(x=>x.number>1)){
-    const raw=String(row.values.E??"").trim();
-    if(raw===""||raw==="0") continue;
+    const raw=String(row.values.H??"").trim();
+    if(raw===""||raw==="0")continue;
     const qty=Number(raw);
     if(!Number.isSafeInteger(qty)||qty<1||qty>100000000){
-      errors.push("Row "+row.number+": Quantity must be a positive whole number.");continue;
+      errors.push("Row "+row.number+": Order Quantity must be a positive whole number.");continue;
     }
     const id=Number(row.values.A);
     const product=byId.get(id);
     if(!product||!product.active){
-      errors.push("Row "+row.number+": Item not found or removed (Product ID "+String(row.values.A??"")+").");continue;
+      errors.push("Row "+row.number+": Product ID "+String(row.values.A??"")+" was not found or has been archived. Download a new template.");continue;
     }
     if(seen.has(id)){errors.push("Row "+row.number+": "+product.name+" was entered twice.");continue;}
     seen.add(id);
-    const sheetSku=String(row.values.B??"").trim();
-    if(sheetSku!==String(product.sku||"").trim()){
-      errors.push("Row "+row.number+": Item code does not match "+product.name+". Download a fresh template.");continue;
+    if(norm(row.values.B)!==norm(product.sku)){
+      errors.push("Row "+row.number+": Item Code does not match "+product.name+". Download a new template.");continue;
     }
-    const rawCost=String(row.values.F??"").trim();
-    const cost=rawCost===""?Number(product.cost):Number(rawCost);
+    if(norm(row.values.C)!==norm(product.name)||norm(row.values.D)!==norm(product.category)||norm(row.values.F)!==norm(product.unit)){
+      errors.push("Row "+row.number+": Item details for "+product.name+" have changed. Download a fresh PO template.");continue;
+    }
+    // The item's usual supplier is only a reference. The PO supplier is
+    // chosen once in the app and may be a different Supun branch.
+    const costRaw=String(row.values.I??"").trim();
+    const cost=costRaw===""?Number(product.cost):Number(costRaw);
     if(!Number.isFinite(cost)||cost<0||cost>1e12){
-      errors.push("Row "+row.number+": Unit cost is not valid.");continue;
+      errors.push("Row "+row.number+": Unit Cost must be a non-negative amount.");continue;
     }
     selected.push({pid:id,qty,cost:Math.round(cost*100)/100,name:product.name,sku:product.sku||""});
     if(selected.length>200){errors.push("A purchase order can contain a maximum of 200 different items.");break;}
   }
-  if(errors.length) {
-    const error=new Error("Please fix the Excel file:\n"+errors.slice(0,8).join("\n")+(errors.length>8?"\n...and "+(errors.length-8)+" more.":""));
-    error.status=422;
-    throw error;
+  if(errors.length){
+    const e=new Error("Fix the PO Excel:\n"+errors.slice(0,8).join("\n")+(errors.length>8?"\n...and "+(errors.length-8)+" more.":""));
+    e.status=422;throw e;
   }
-  if(!selected.length){const error=new Error("No quantities found. Enter numbers in the Quantity column (E) and upload again.");error.status=422;throw error;}
+  if(!selected.length){const e=new Error("No order quantities entered. Enter numbers in column H (Order Quantity) and upload again.");e.status=422;throw e;}
   return selected;
 }
-
 
 // Current Stock Migration: the same 11-column, bordered template is used for
 // first-time opening balances and later absolute stock counts / item updates.
