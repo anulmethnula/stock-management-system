@@ -929,11 +929,11 @@ function SupplierReturnForm({grn,d,close,busy,action}) {
     </form></Modal>;
 }
 function InventoryBulkForm({d,close,action,busy}) {
-  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false),[showUnchanged,setShowUnchanged]=useState(false);
+  const [uploading,setUploading]=useState(false),[fileName,setFileName]=useState(""),[preview,setPreview]=useState(null),[error,setError]=useState(""),[confirmed,setConfirmed]=useState(false),[showUnchanged,setShowUnchanged]=useState(false),[archiveMissing,setArchiveMissing]=useState(false);
   const upload=async e=>{
     const file=e.target.files?.[0];e.target.value="";
     if(!file)return;
-    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);setShowUnchanged(false);
+    setFileName(file.name);setPreview(null);setError("");setConfirmed(false);setShowUnchanged(false);setArchiveMissing(false);
     if(!file.name.toLowerCase().endsWith(".xlsx")){setError("Choose an Excel .xlsx file.");return;}
     if(file.size>4*1024*1024){setError("Excel file must be smaller than 4 MB.");return;}
     setUploading(true);
@@ -946,7 +946,7 @@ function InventoryBulkForm({d,close,action,busy}) {
   };
   const changes=preview?.rows?.filter(x=>x.action!=="unchanged")||[];
   const reviewRows=showUnchanged?preview?.rows||[]:changes;
-  const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading;
+  const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading&&(changes.length>0||archiveMissing);
   return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
     <div className="notice"><Info size={18}/> Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</div>
     <div className="po-excel" style={{marginTop:16,marginBottom:16}}>
@@ -957,13 +957,13 @@ function InventoryBulkForm({d,close,action,busy}) {
           <input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={uploading||busy} onChange={upload}/>
         </label>
       </div>
-      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are NOT deleted.</p>
+      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are kept by default. A separate option can archive eligible missing items only if you upload your COMPLETE product list.</p>
       {fileName&&<small>Selected: <strong>{fileName}</strong></small>}
     </div>
     {error&&<div className="error-banner" role="alert"><AlertTriangle size={17}/><span>{error}</span></div>}
     {preview&&<>
       <div className="inventory-summary" style={{gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",marginBottom:12}}>
-        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
+        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount],["Missing from Excel",preview.summary.missingCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
       </div>
       {!!preview.summary.categories.length&&<div className="notice"><Info size={16}/><span>New categories from Excel: <strong>{preview.summary.categories.join(", ")}</strong></span></div>}
       {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>Fix these problems and upload again:</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}</div>}
@@ -979,6 +979,15 @@ function InventoryBulkForm({d,close,action,busy}) {
         </table>
       </div>
 
+      {(preview.missing||[]).length>0&&<div className="notice" style={{marginTop:14,display:"block"}}>
+        <strong>{preview.summary.missingCount} existing active items are absent from this file.</strong>
+        <p className="mute">{preview.summary.archiveEligible} are eligible for optional archiving (zero stock and no open orders/quotations). {preview.summary.archiveBlocked} cannot be archived because of stock or pending documents. No missing item will be removed by default.</p>
+        <details><summary>Review missing items</summary><div style={{maxHeight:190,overflow:"auto"}}>{preview.missing.map(p=><p key={p.id} className="mute">{p.name} ({p.sku||p.id}) — {p.eligible?"Eligible for archive":p.reason}</p>)}</div></details>
+        {preview.summary.archiveEligible>0&&<label className="checkline" style={{marginTop:12}}>
+          <input type="checkbox" checked={archiveMissing} onChange={e=>{setArchiveMissing(e.target.checked);setConfirmed(false);}}/>
+          Archive the {preview.summary.archiveEligible} eligible missing items. Only select this if the Excel is your COMPLETE item list; otherwise leave unchecked.
+        </label>}
+      </div>}
       <p className="mute" style={{marginTop:10}}>Net stock adjustment: <strong>{preview.summary.stockDelta>0?"+":""}{preview.summary.stockDelta}</strong> units across all items.</p>
       <label className="checkline" style={{marginTop:14}}>
         <input type="checkbox" checked={confirmed} disabled={!preview.canCommit} onChange={e=>setConfirmed(e.target.checked)}/>
@@ -986,7 +995,7 @@ function InventoryBulkForm({d,close,action,busy}) {
       </label>
     </>}
     <div className="form-actions">
-      <button type="button" className="btn" disabled={!canSave} onClick={()=>action("/inventory-import/commit","POST",{token:preview.token,confirm:true},"Bulk inventory upload saved. Item details and stock history updated.","products")}>
+      <button type="button" className="btn" disabled={!canSave} onClick={()=>action("/inventory-import/commit","POST",{token:preview.token,confirm:true,archiveMissing},"Bulk inventory upload saved. Item details and stock history updated.","products")}>
         <Check size={16}/>{busy?"Saving…":"Confirm Bulk Upload"}
       </button>
       <button className="btn ghost" type="button" onClick={close}>Cancel</button>
