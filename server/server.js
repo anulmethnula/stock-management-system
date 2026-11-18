@@ -160,11 +160,12 @@ app.get("/api/all", run(req => {
     deliveries: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,order_id orderN,customer_id cid,date,delivered_by byName,note,status FROM deliveries ORDER BY n DESC").all()
       .map(d => ({ ...d, lines: deliveryLines.filter(l => l.delivery_id === d.n) }))
       : [],
-    returns: canSee("deliveries","reports") ? db.prepare("SELECT id n,code id,delivery_id deliveryN,customer_id cid,date,note,status FROM customer_returns ORDER BY n DESC").all()
+    returns: canSee("deliveries","reports") ? db.prepare("SELECT r.id n,r.code id,r.delivery_id deliveryN,r.customer_id cid,r.date,r.note,r.status,(SELECT m.actor FROM stock_movements m WHERE m.reference=r.code AND m.event_type=\'Customer return\' LIMIT 1) byName FROM customer_returns r ORDER BY r.id DESC").all()
       .map(r => ({ ...r, lines: returnLines.filter(l => l.return_id === r.n) }))
       : [],
     movements: canSee("stock_history","reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id DESC LIMIT 1000").all() : [],
-    reportMovements: canSee("reports") ? db.prepare("SELECT "+movementFields+" FROM stock_movements ORDER BY id").all() : [],
+    // Historical reports now request SQL aggregates or paginated movements separately.
+    reportMovements: [],
     dashboardChart: canSee("dashboard") ? db.prepare("SELECT date("+localAt+") day, SUM(CASE WHEN event_type IN ('Goods received','GRN reversed') THEN qty_change ELSE 0 END) received, SUM(CASE WHEN event_type IN ('Delivered to customer','Delivery reversed') THEN -qty_change ELSE 0 END) delivered FROM stock_movements WHERE created_at>=datetime('now','-12 months','-2 days') GROUP BY day ORDER BY day").all() : [],
     dashboardCounts: canSee("dashboard") ? {
       items:db.prepare("SELECT COUNT(*) n FROM products WHERE active=1").get().n,
