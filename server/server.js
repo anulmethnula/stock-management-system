@@ -5,7 +5,8 @@ import os from "os";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import db, { createDatabaseBackup, passwordHash, passwordMatches } from "./db.js";
-import { buildPOTemplate, parsePOUpload } from "./po-excel.js";
+import { buildPOTemplate, parsePOUpload, buildGRNTemplate, parseGRNUpload } from "./po-excel.js";
+import { registerReportingRoutes } from "./reporting.js";
 import { registerInventoryImportRoutes } from "./inventory-import.js";
 import { registerQuotationRoutes } from "./quotations.js";
 
@@ -398,6 +399,31 @@ app.delete("/api/pos/:id", requireEdit("purchase_orders"), run(req => {
   db.prepare("UPDATE purchase_orders SET status=? WHERE id=?").run(n ? "Part cancelled" : "Cancelled", po.id);
   return { ok: true };
 }));
+// GRN Excel is only a prepared selection. The normal Save GRN API remains
+// the only place that increases real inventory.
+const grnExcelLines=poId=>db.prepare("SELECT p.id,p.sku,p.name,p.category,p.unit,li.qty ordered,li.received FROM po_items li JOIN products p ON p.id=li.product_id WHERE li.po_id=? ORDER BY p.category COLLATE NOCASE,p.name COLLATE NOCASE").all(poId);
+app.get("/api/pos/:id/grn-template",requireEdit("goods_received"),(req,res)=>{
+  try {
+    const po=find("purchase_orders",req.params.id);
+    check(["Ordered","Part received"].includes(po.status),"This PO is not open for receiving.",409);
+    const supplier=find("suppliers",po.supplier_id);
+    const buffer=buildGRNTemplate({code:po.code,supplierName:supplier.name},grnExcelLines(po.id));
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",'attachment; filename="StockEasy_'+po.code+'_GRN.xlsx"');
+    res.setHeader("Cache-Control","no-store");res.send(buffer);
+  }catch(e){res.status(e.status||500).json({error:e.status?e.message:"Could not create the GRN template."});}
+});
+app.post("/api/pos/:id/grn-import",requireEdit("goods_received"),
+  express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
+  run(req=>{
+    const po=find("purchase_orders",req.params.id);
+    check(["Ordered","Part received"].includes(po.status),"This PO is not open for receiving.",409);
+    check(Buffer.isBuffer(req.body)&&req.body.length>0,"Upload a GRN .xlsx file.");
+    let lines;try{lines=parseGRNUpload(req.body,po,grnExcelLines(po.id));}
+    catch(e){e.status=e.status||422;throw e;}
+    return {poCode:po.code,lines,count:lines.length,total:lines.reduce((n,l)=>n+l.qty,0)};
+  })
+);
 app.post("/api/pos/:id/receive", requireEdit("goods_received"), run(req => transaction(() => {
   const po = find("purchase_orders", req.params.id);
   check(["Ordered","Part received"].includes(po.status), "This purchase order is not open.", 409);
@@ -613,6 +639,7 @@ app.post("/api/quarantine",requireEdit("stock_adjustments"),run(req=>transaction
 })));
 
  registerInventoryImportRoutes(app,{db,express,requireEdit,run,transaction,check,changeStock,logStock});
+ registerReportingRoutes(app,{db,express,check,cleanPermissions,movementFields});
 // Admin controls: no password hashes in responses; disable instead of deleting audit actors.
 app.get("/api/admin/database-backup",admin,(req,res)=>{
   const stamp=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Colombo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date()).replaceAll(":","-").replace(" ","_");
