@@ -93,6 +93,7 @@ test("PO template supports existing and new products with bordered formulas",()=
   assert.match(xml,/dataValidations count="2"/);
   assert.match(xml,/left style="thin"/);
   assert.match(xml,/How to Fill/);
+  assert.match(xml,/r="501"/);
   const imported=parsePOUpload(source,items);
   assert.deepEqual(imported.map(x=>({pid:x.pid,qty:x.qty,cost:x.cost})),[{pid:11,qty:4,cost:230.5}]);
   assert.equal(buildPOTemplate([]).readUInt32LE(0),0x04034b50);

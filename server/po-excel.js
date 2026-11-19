@@ -70,7 +70,7 @@ export const poHeaders=[
 const PO_COLS="ABCDEFG";
 export function buildPOTemplate(products, quantitiesById = {}) {
   if(products.length>1000)throw new Error("Too many items to export. Please split the catalogue.");
-  const lastRow=Math.max(201,products.length+1),rows=[
+  const lastRow=Math.max(501,products.length+1),rows=[
     '<row r="1" ht="36" customHeight="1">'+poHeaders.map((v,i)=>xmlCell(PO_COLS[i]+"1",v,1)).join("")+"</row>"
   ];
   for(let i=0;i<lastRow-1;i++){
@@ -98,7 +98,7 @@ export function buildPOTemplate(products, quantitiesById = {}) {
     ["STOCKEASY — PURCHASE ORDER BULK REQUEST",""],
     ["1. CHOOSE SUPPLIER","Choose the requested supplier/branch in the StockEasy PO form before uploading."],
     ["2. EXISTING ITEMS","Use the saved Item Code. Name, Category and Unit may be blank or must match Inventory."],
-    ["3. NEW ITEMS","Enter a unique Item Code, Item Name, Category and Unit. The sheet has 200 order rows."],
+    ["3. NEW ITEMS","Enter a unique Item Code, Item Name, Category and Unit. The sheet has 500 entry rows."],
     ["4. ORDER QUANTITY","Enter a positive whole number in column E."],
     ["5. UNIT COST","Enter a non-negative buying price in column F."],
     ["6. AUTO TOTAL","Column G calculates Order Quantity × Unit Cost. Do not edit the formula."],
@@ -523,7 +523,7 @@ export function buildGRNTemplate(po,items,receiveNowById={}){
       ["4","Upload to the same PO GRN form. Review values then click Save GRN to update stock."],
       ["5","Uploading alone NEVER changes stock. Partial receipts are allowed."],
       ["6","If any goods were received after downloading this file, download a fresh GRN template."],
-      ["7","Never upload the 11-column Items Migration sheet or the 10-column PO Request sheet here."]
+      ["7","Never upload the 11-column Items Migration sheet or the 7-column PO Request sheet here."]
     ]
   });
 }
@@ -534,7 +534,7 @@ export function parseGRNUpload(buffer,po,items){
   const byId=new Map(items.map(x=>[x.id,x])),rows=[],seen=new Set(),errors=[];
   const sheet=files.get("xl/worksheets/sheet1.xml");
   const all=[...sheet.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)];
-  if(all.length>210)throw Object.assign(new Error("GRN template contains too many rows."),{status:422});
+  if(all.length>1200)throw Object.assign(new Error("GRN template contains too many rows."),{status:422});
   for(const m of all){
     const v={};
     for(const c of m[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
