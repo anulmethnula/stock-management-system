@@ -81,8 +81,9 @@ export function QuotationForm({record,d,close,busy,action}){
   const products=d.products.filter(p=>p.active&&[p.name,p.sku,p.category].join(" ").toLowerCase().includes(search.toLowerCase()))
     .sort((a,b)=>Number(Number(qty[b.id]||0)>0)-Number(Number(qty[a.id]||0)>0)||a.name.localeCompare(b.name));
   const selected=d.products.filter(p=>Number(qty[p.id])>0).map(p=>({pid:p.id,qty:Number(qty[p.id]),price:Number(prices[p.id]??p.sell)}));
-  const grand=selected.reduce((sum,l)=>sum+l.qty*l.price,0);
-  const submit=e=>{e.preventDefault();action("/quotations"+(record?"/"+record.n:""),record?"PUT":"POST",{cid:Number(cid),items:selected,valid_until:until,note},"Quotation saved.","quotes");};
+  const invalidPrices=selected.filter(l=>!Number.isFinite(l.price)||l.price<=0);
+  const grand=selected.reduce((sum,l)=>sum+(Number.isFinite(l.price)&&l.price>0?l.qty*l.price:0),0);
+  const submit=e=>{e.preventDefault();if(invalidPrices.length)return;action("/quotations"+(record?"/"+record.n:""),record?"PUT":"POST",{cid:Number(cid),items:selected,valid_until:until,note},"Quotation saved.","quotes");};
   return <QuotationModal title={record?"Edit draft quotation":"Create customer quotation"} sub="Prepare a price offer. No inventory changes until a delivery is recorded." close={close}>
     <form onSubmit={submit} className="quote-form">
       <div className="quote-form-grid">
@@ -93,15 +94,15 @@ export function QuotationForm({record,d,close,busy,action}){
       <div className="quote-products-head"><h4>Items and prices</h4><label className="search"><Search size={16}/><input placeholder="Find an item…" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
       <div className="quote-item-table">
         <div className="quote-item-row quote-item-head"><span>Item</span><span>Qty</span><span>Price / unit (Rs)</span><span>Amount</span></div>
-        {products.map(p=>{const n=Number(qty[p.id]||0),price=Number(prices[p.id]??p.sell);return <div className="quote-item-row" key={p.id}>
+        {products.map(p=>{const n=Number(qty[p.id]||0),price=Number(prices[p.id]??p.sell),priceInvalid=!Number.isFinite(price)||price<=0;return <div className={"quote-item-row "+(n&&priceInvalid?"price-error":"")} key={p.id}>
           <div className="quote-item-name"><span className="quote-item-picture">{p.img?<img alt="" src={p.img}/>:p.emoji||"📦"}</span><span><strong>{p.name}</strong><small>{p.sku||"No item code"} · {p.stock} in stock</small></span></div>
           <input type="number" min="0" max="100000000" step="1" aria-label={"Quantity for "+p.name} value={n} onChange={e=>setQty(v=>({...v,[p.id]:Math.max(0,Math.floor(Number(e.target.value)||0))}))}/>
-          <input type="number" min="0" step=".01" max="1000000000000" aria-label={"Unit price for "+p.name} value={prices[p.id]??p.sell} onChange={e=>setPrices(v=>({...v,[p.id]:e.target.value}))}/>
+          <div className="quote-price-field"><input type="number" min=".01" step=".01" max="1000000000000" aria-label={"Offered price for "+p.name} value={prices[p.id]??p.sell??0} onChange={e=>setPrices(v=>({...v,[p.id]:e.target.value}))}/>{priceInvalid&&<small>Enter offered price</small>}</div>
           <strong>{n?money(n*price):"—"}</strong>
-        </div>})}{!products.length&&<p className="mute">No matching products.</p>}
+        </div>})}{!products.length&&<div className="quote-empty-products"><span><Package size={25}/></span><div><strong>{search?"No matching products":"No products available"}</strong><small>{search?"Try another item name, code, or category.":"Add active Inventory items before creating a quotation."}</small></div></div>}
       </div>
       <label className="quote-note"><span>Terms / Notes (optional)</span><textarea rows={2} maxLength={1000} value={note} onChange={e=>setNote(e.target.value)} placeholder="Delivery terms, payment conditions or other notes"/></label>
-      <footer className="quote-form-footer"><div><small>{selected.length} items selected</small><strong>{money(grand)}</strong></div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!cid||!selected.length||until<localDate()}><Check size={16}/>{busy?"Saving…":record?"Update Draft":"Save Draft Quotation"}</button></div></footer>
+      <footer className="quote-form-footer"><div><small>{selected.length} items selected{invalidPrices.length?` · ${invalidPrices.length} need a valid price`:""}</small><strong>{money(grand)}</strong></div><div><button className="btn ghost" type="button" onClick={close}>Cancel</button><button className="btn" type="submit" disabled={busy||!cid||!selected.length||!!invalidPrices.length||until<localDate()}><Check size={16}/>{busy?"Saving…":record?"Update Draft":"Save Draft Quotation"}</button></div></footer>
     </form>
   </QuotationModal>;
 }

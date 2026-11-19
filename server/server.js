@@ -377,7 +377,7 @@ function poPayload(b) {
 }
 // Bulk entry: download a real .xlsx workbook, then preview an uploaded workbook.
 // Import never changes stock and never creates a PO until the user confirms the order.
-app.get("/api/po-template", (req,res) => {
+const downloadPOTemplate=(req,res) => {
   const access=cleanPermissions(req.user.permissions,req.user.role).purchase_orders;
   if(access==="none") return res.status(403).json({error:"You do not have access to purchase orders."});
   try {
@@ -385,13 +385,16 @@ app.get("/api/po-template", (req,res) => {
     const workbook=buildPOTemplate(products);
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",'attachment; filename="StockEasy_PO_Template.xlsx"');
+    res.setHeader("X-Content-Type-Options","nosniff");
     res.setHeader("Cache-Control","no-store");
     res.send(workbook);
   } catch(error) {
     console.error("Excel template error:",error);
     res.status(500).json({error:"Could not create the template. Please try again."});
   }
-});
+};
+app.get("/api/po-template.xlsx",downloadPOTemplate);
+app.get("/api/po-template",downloadPOTemplate);
 app.post("/api/po-import", requireEdit("purchase_orders"),
   express.raw({type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",limit:"4mb"}),
   run(req=>{
@@ -735,6 +738,7 @@ app.delete("/api/staff/:id",admin,run(req=>{
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),"..");
 const dist=path.join(root,"dist");
 if(fs.existsSync(dist)){
+  app.use("/api",(req,res)=>res.status(404).json({error:"API endpoint not found. The StockEasy server may need to be updated or restarted."}));
   app.use(express.static(dist));
   app.get("*",(req,res)=>res.sendFile(path.join(dist,"index.html")));
 }

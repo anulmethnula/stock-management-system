@@ -55,6 +55,14 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     cookie = login.response.headers.get("set-cookie")?.split(";")[0] || "";
     assert.match(cookie, /^stockeasy_session=/);
 
+    // PO Excel must download before any suppliers, categories, or products exist.
+    const emptyPOTemplate=await fetch(root+"/po-template.xlsx",{headers:{Cookie:cookie}});
+    assert.equal(emptyPOTemplate.status,200);
+    assert.match(emptyPOTemplate.headers.get("content-type")||"",/spreadsheetml/);
+    const emptyPOBuffer=Buffer.from(await emptyPOTemplate.arrayBuffer());
+    assert.equal(emptyPOBuffer.readUInt32LE(0),0x04034b50);
+    assert.ok(emptyPOBuffer.includes(Buffer.from("Order Quantity")));
+
     const a = await idOf("/branches", "id", { name: "Supun Branch A", contact: "Manager A", phone: "077000001", phone2: "071000001", location: "Colombo", notes: "Open weekdays", supplier_type: "internal" });
     const b = await idOf("/branches", "id", { name: "External Supplier B", contact: "Manager B", phone: "077000002", location: "Galle", supplier_type: "external" });
     await api("/branches/" + a, "PUT", { name: "Supun Central", contact: "Manager A", phone: "077000001", phone2: "071000001", location: "Colombo", notes: "Use rear entrance", supplier_type: "internal", active: 1 });
@@ -165,14 +173,18 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     // Quote -> recorded customer approval -> exactly one CO, with prices preserved.
     const expiry=new Date();expiry.setDate(expiry.getDate()+14);
     const validUntil=[expiry.getFullYear(),String(expiry.getMonth()+1).padStart(2,"0"),String(expiry.getDate()).padStart(2,"0")].join("-");
+    await api("/quotations","POST",{cid,items:[{pid,qty:1,price:0}],valid_until:validUntil},400);
+    const inventorySellingPrice=(await snapshot()).products.find(x=>x.id===pid).sell;
+    const inventoryBuyingPrice=(await snapshot()).products.find(x=>x.id===pid).cost;
+    assert.notEqual(inventorySellingPrice,inventoryBuyingPrice);
     const qtCode=await idOf("/quotations","code",{
-      cid,items:[{pid,qty:4,price:175.25}],valid_until:validUntil,note:"Offer valid for 14 days"
+      cid,items:[{pid,qty:4}],valid_until:validUntil,note:"Offer valid for 14 days"
     });
     let qSnapshot=await snapshot();
     assert.equal(qSnapshot.products.find(x=>x.id===pid).stock,0);
     assert.equal(qSnapshot.quotations[0].id,qtCode);
     assert.equal(qSnapshot.quotations[0].status,"Draft");
-    assert.equal(qSnapshot.quotations[0].items[0].price,175.25);
+    assert.equal(qSnapshot.quotations[0].items[0].price,inventorySellingPrice);
     const qtN=qSnapshot.quotations[0].n;
     await api("/quotations/"+qtN+"/convert","POST",{},409);
     await api("/quotations/"+qtN,"PUT",{

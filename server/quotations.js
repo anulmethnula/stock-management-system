@@ -21,9 +21,11 @@ export function registerQuotationRoutes(app, h) {
   const payload=b=>{
     const customer=find("customers",ident(b.cid));
     check(customer.active===1,"Choose an active customer.");
-    const lines=validateLines(b.items,"quotation").map(l=>({
-      ...l,price:money(l.price??l.product.sale_price,"Quoted selling price")
-    }));
+    const lines=validateLines(b.items,"quotation").map(l=>{
+      const price=money(l.price??l.product.sale_price,"Quoted selling price");
+      check(price>0,`Enter a valid offered price for ${l.product.name}. Inventory Selling Price is zero or missing.`);
+      return {...l,price};
+    });
     return {customer,lines,valid_until:validDate(b.valid_until),note:str(b.note,1000)};
   };
   const insertLines=(qid,lines)=>{

@@ -826,6 +826,22 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
   const [importError,setImportError]=useState("");
   const [imported,setImported]=useState(null);
   const [newPOItems,setNewPOItems]=useState([]);
+  const [downloadingPO,setDownloadingPO]=useState(false);
+  const downloadPOTemplate=async()=>{
+    setImportError("");setDownloadingPO(true);
+    try{
+      let response=await fetch("/api/po-template.xlsx",{credentials:"same-origin",cache:"no-store"});
+      if(response.status===404)response=await fetch("/api/po-template",{credentials:"same-origin",cache:"no-store"});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||"Could not download the PO template.");}
+      const blob=await response.blob(),head=new Uint8Array(await blob.slice(0,4).arrayBuffer());
+      if(head[0]!==0x50||head[1]!==0x4b||head[2]!==0x03||head[3]!==0x04)
+        throw new Error("The server returned a web page instead of an Excel file. Update and restart the StockEasy backend, then try again.");
+      const url=URL.createObjectURL(blob),link=document.createElement("a");
+      link.href=url;link.download="StockEasy_PO_Template.xlsx";document.body.appendChild(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){setImportError(error.message||"Could not download the PO template.");}
+    finally{setDownloadingPO(false);}
+  };
   const onExcelUpload=async event=>{
     const file=event.target.files?.[0];
     event.target.value="";
@@ -884,8 +900,8 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
           <div><strong>Ordering lots of items?</strong><small>Use Excel instead of adding everything by hand.</small></div></div>
         <div className="po-excel-steps"><span><b>1</b>Download</span><i>→</i><span><b>2</b>Fill Quantities</span><i>→</i><span><b>3</b>Upload &amp; Check</span></div>
         <div className="po-excel-actions">
-          <a className="btn ghost sm" href="/api/po-template" download="StockEasy_PO_Template.xlsx">
-            <Download size={16}/> Download latest PO template</a>
+          <button className="btn ghost sm" type="button" disabled={downloadingPO} onClick={downloadPOTemplate}>
+            <Download size={16}/> {downloadingPO?"Preparing Excel…":"Download latest PO template"}</button>
           <label className={"btn sm po-excel-upload"+(importing?" disabled":"")}><Upload size={16}/>
             {importing?"Checking Excel…":"Upload filled Excel"}
             <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
