@@ -220,9 +220,20 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(preview.count,1);
     assert.deepEqual(preview.items.map(x=>({pid:x.pid,qty:x.qty,cost:x.cost})),[{pid,qty:20,cost:100}]);
     assert.equal((await api("/all")).data.pos.length,0);
+    const newPOWorkbook=buildPOTemplate([{sku:"PO-NEW-001",name:"Excel PO New Item",category:"PO Created Category",unit:"sets",cost:55}],{"PO-NEW-001":6});
+    const newPOResponse=await fetch(root+"/po-import",{method:"POST",headers:{Cookie:cookie,"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},body:newPOWorkbook});
+    assert.equal(newPOResponse.status,200);
+    const newPOPreview=await newPOResponse.json();
+    assert.equal(newPOPreview.newCount,1);
+    assert.equal(newPOPreview.items[0].isNew,true);
     // A product's usual branch A does not prevent requesting it from branch B.
-    const poCode = await idOf("/pos", "code", { sid: b, items: preview.items });
+    const poCode = await idOf("/pos", "code", { sid: b, items: preview.items, newItems:newPOPreview.items });
     const poN = (await snapshot()).pos.find(x => x.id === poCode).n;
+    const poCreatedProduct=(await snapshot()).products.find(x=>x.sku==="PO-NEW-001");
+    assert.ok(poCreatedProduct);
+    assert.equal(poCreatedProduct.stock,0);
+    assert.equal(poCreatedProduct.sid,b);
+    assert.ok((await snapshot()).categories.some(x=>x.name==="PO Created Category"));
     // A PO can be edited before receiving starts.
     await api("/pos/" + poN, "PUT", { sid: b, items: [{ pid, qty: 20, cost: 105 }] });
     assert.equal((await snapshot()).pos.find(x => x.n === poN).items[0].cost, 105);
@@ -421,18 +432,18 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       unit:"pieces",cost:1,sell:2,stock:0
     });
     const beforeArchive=await snapshot();
-    const archiveFile=buildInventoryTemplate(beforeArchive.products.filter(p=>p.active&&p.id!==archiveId).map(p=>({
+    const archiveFile=buildInventoryTemplate(beforeArchive.products.filter(p=>p.active&&p.id!==archiveId&&beforeArchive.branches.find(b=>b.id===p.sid)?.active).map(p=>({
       id:p.id,sku:p.sku,name:p.name,category:p.category,
       supplierName:beforeArchive.branches.find(b=>b.id===p.sid).name,
       unit:p.unit,stock:p.stock,cost:p.cost,sell:p.sell
     })));
     const archivePreview=await previewExcel(archiveFile);
-    assert.equal(archivePreview.summary.archiveEligible,1);
+    assert.equal(archivePreview.summary.archiveEligible,2);
     assert.equal(archivePreview.canCommit,true);
     const archiveResult=(await api("/inventory-import/commit","POST",{
       token:archivePreview.token,confirm:true,archiveMissing:true
     })).data;
-    assert.equal(archiveResult.archived,1);
+    assert.equal(archiveResult.archived,2);
     assert.equal((await snapshot()).products.find(p=>p.id===archiveId).active,0);
     assert.equal((await snapshot()).products.find(p=>p.id===bulkItem.id).active,1);
     // Order cancellation still keeps historical documents.

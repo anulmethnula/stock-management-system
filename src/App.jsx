@@ -825,11 +825,12 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
   const [importing,setImporting]=useState(false);
   const [importError,setImportError]=useState("");
   const [imported,setImported]=useState(null);
+  const [newPOItems,setNewPOItems]=useState([]);
   const onExcelUpload=async event=>{
     const file=event.target.files?.[0];
     event.target.value="";
     if(!file)return;
-    setImportError("");setImported(null);
+    setImportError("");setImported(null);setNewPOItems([]);
     if(!file.name.toLowerCase().endsWith(".xlsx")){
       setImportError("Please upload an Excel .xlsx file.");return;
     }
@@ -838,7 +839,7 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
     }
     setImporting(true);
     try {
-      const response=await fetch("/api/po-import",{
+      const response=await fetch("/api/po-import?sid="+encodeURIComponent(party),{
         method:"POST",credentials:"same-origin",
         headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
         body:file
@@ -846,9 +847,11 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Excel import failed.");
       // Imported quantities replace the current selection; the PO is NOT saved yet.
-      setQuantities(Object.fromEntries(result.items.map(x=>[x.pid,x.qty])));
-      setPrices(Object.fromEntries(result.items.map(x=>[x.pid,x.cost])));
-      setImported({count:result.count,total:result.total,name:file.name});
+      const existing=result.items.filter(x=>!x.isNew),fresh=result.items.filter(x=>x.isNew);
+      setQuantities(Object.fromEntries(existing.map(x=>[x.pid,x.qty])));
+      setPrices(Object.fromEntries(existing.map(x=>[x.pid,x.cost])));
+      setNewPOItems(fresh);
+      setImported({...result,name:file.name});
       setQuery("");setPoCategory("all");
     } catch(error){
       setImportError(error.message||"Could not read the Excel file.");
@@ -861,11 +864,12 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
     .sort((a,b)=>Number(number(quantities[b.id])>0)-Number(number(quantities[a.id])>0)||a.name.localeCompare(b.name));
   const lines=d.products.filter(p=>number(quantities[p.id])>0).map(p=>({pid:p.id,qty:number(quantities[p.id]),
     [purchase?"cost":"price"]:number(prices[p.id]??(purchase?p.cost:p.sell))}));
-  const total=lines.reduce((s,l)=>s+l.qty*(purchase?l.cost:l.price),0);
+  const selectedCount=lines.length+(purchase?newPOItems.length:0);
+  const total=lines.reduce((s,l)=>s+l.qty*(purchase?l.cost:l.price),0)+(purchase?newPOItems.reduce((s,l)=>s+l.qty*l.cost,0):0);
   const route=purchase?"/pos":"/customer-orders";
   const handle=e=>{
     e.preventDefault();
-    action(route+(record?"/"+record.n:""),record?"PUT":"POST",purchase?{sid:Number(party),items:lines}:{cid:Number(party),items:lines,note},
+    action(route+(record?"/"+record.n:""),record?"PUT":"POST",purchase?{sid:Number(party),items:lines,newItems:newPOItems}:{cid:Number(party),items:lines,note},
       (purchase?"Stock request":"Customer order")+" saved.",purchase?"pos":"orders");
   };
   return <Modal wide className={purchase?"po-document-modal":"order-document-modal"} HeaderIcon={purchase?null:ShoppingBag} title={purchase?(record?"Edit Purchase Order (PO)":"Create Purchase Order (PO)"):(record?"Edit Customer Order":"New Customer Order")}
@@ -880,19 +884,20 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
           <div><strong>Ordering lots of items?</strong><small>Use Excel instead of adding everything by hand.</small></div></div>
         <div className="po-excel-steps"><span><b>1</b>Download</span><i>→</i><span><b>2</b>Fill Quantities</span><i>→</i><span><b>3</b>Upload &amp; Check</span></div>
         <div className="po-excel-actions">
-          {active(d.products).length>0?<a className="btn ghost sm" href="/api/po-template" download="StockEasy_PO_Template.xlsx">
-            <Download size={16}/> Download latest PO template</a>:<span className="mute">Import Items first to download the PO template.</span>}
+          <a className="btn ghost sm" href="/api/po-template" download="StockEasy_PO_Template.xlsx">
+            <Download size={16}/> Download latest PO template</a>
           <label className={"btn sm po-excel-upload"+(importing?" disabled":"")}><Upload size={16}/>
             {importing?"Checking Excel…":"Upload filled Excel"}
             <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              disabled={importing||active(d.products).length===0} onChange={onExcelUpload} hidden aria-label="Upload filled Excel template"/>
+              disabled={importing} onChange={onExcelUpload} hidden aria-label="Upload filled Excel template"/>
           </label>
         </div>
-        <p className="po-excel-help">This sheet is refreshed from your <b>current active Items</b> after the stock migration, including Category, Usual Supplier, Available Stock and buying cost. Choose the supplier above, fill <b>Order Quantity (column H)</b> and review Unit Cost (column I). Uploading only prepares a PO; <b>stock increases only when its GRN is saved</b>.</p>
+        <p className="po-excel-help">Existing products are matched by <b>Item Code</b>. You can also add new products with Name, Category and Unit in any of the 500 rows. Fill <b>Order Quantity (column E)</b> and Unit Cost (column F). New products use the supplier selected above and start at zero stock; <b>only GRN increases stock</b>.</p>
         {importError&&<div className="po-excel-error" role="alert"><AlertTriangle size={17}/><span>{importError}</span></div>}
         {imported&&<div className="po-excel-success" role="status"><Check size={18}/>
-          <span><b>{imported.count} items loaded from Excel.</b> Please check the quantities below before saving.</span>
+          <span><b>{imported.count} items loaded: {imported.existingCount} existing, {imported.newCount} new.</b> Estimated cost {rs(imported.total)}.</span>
           <button type="button" className="icon-btn" title="Dismiss" aria-label="Dismiss import message" onClick={()=>setImported(null)}><X size={16}/></button></div>}
+        {imported&&<div className="po-excel-preview">{imported.items.map((item,index)=><div key={item.pid||item.sku+index}><span className={item.isNew?"state-pill warn":"state-pill good"}>{item.isNew?"New":"Existing"}</span><strong>{item.name}</strong><small>{item.sku} · {item.category} · {item.qty} {item.unit} × {rs(item.cost)}</small></div>)}</div>}
       </div>}
       <h4>Select items & quantities {purchase&&<span className="po-excel-optional">(or use the latest Excel template above)</span>}</h4>
       <div className={purchase?"order-product-tools":"order-product-tools"}><SearchBox value={query} change={setQuery} placeholder="Find item, code or category…"/>{purchase&&<select className="filter-select" aria-label="Filter purchase order items by category" value={poCategory} onChange={e=>setPoCategory(e.target.value)}><option value="all">All categories</option>{poCategories.map(c=><option key={c} value={c}>{c}</option>)}</select>}{!purchase&&<label className="available-toggle"><input type="checkbox" checked={availableOnly} onChange={e=>setAvailableOnly(e.target.checked)}/><span>Available items only</span></label>}</div>
@@ -902,9 +907,9 @@ function DocumentForm({modal,close,busy,action,d,kind}) {
           <strong>{p.name}</strong><small>{p.category||"Uncategorized"} · {p.sku||"No code"} · {p.stock} available</small></div>
           <Qty value={qty} onChange={v=>setQuantities(o=>({...o,[p.id]:v}))}/>
           </div>;
-      }):<p className="mute">{purchase&&active(d.products).length===0?"No inventory items yet. First use Items → Bulk Upload Excel to create or migrate products.": "No matching active items. Change the search or category."}</p>}</div>
+      }):<p className="mute">{purchase&&active(d.products).length===0?"No inventory items yet. Use the PO Excel template above to add products and prepare this order.": "No matching active items. Change the search or category."}</p>}</div>
       {!purchase&&<div className="order-notes"><label>Order notes (optional)</label><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="Customer request or delivery instructions"/></div>}
-      {purchase?<div className="po-sticky-summary"><div><strong>{lines.length}</strong> item{lines.length===1?"":"s"} selected · Estimated PO cost <strong>{rs(total)}</strong></div><Controls busy={busy||importing} close={close} valid={!!party&&lines.length>0} label={record?"Update PO":"Save Purchase Order"}/></div>:<div className="order-sticky-summary"><div><strong>{lines.length}</strong> item{lines.length===1?"":"s"} selected</div><div><button className="btn ghost" type="button" onClick={close}><X size={16}/> Cancel</button><button className="btn" type="submit" disabled={busy||!party||!lines.length}><Check size={17}/>{busy?"Saving…":record?"Update Customer Order":"Create Customer Order"}</button></div></div>}
+      {purchase?<div className="po-sticky-summary"><div><strong>{selectedCount}</strong> item{selectedCount===1?"":"s"} selected · Estimated PO cost <strong>{rs(total)}</strong></div><Controls busy={busy||importing} close={close} valid={!!party&&selectedCount>0} label={record?"Update PO":"Save Purchase Order"}/></div>:<div className="order-sticky-summary"><div><strong>{lines.length}</strong> item{lines.length===1?"":"s"} selected</div><div><button className="btn ghost" type="button" onClick={close}><X size={16}/> Cancel</button><button className="btn" type="submit" disabled={busy||!party||!lines.length}><Check size={17}/>{busy?"Saving…":record?"Update Customer Order":"Create Customer Order"}</button></div></div>}
     </form>
   </Modal>;
 }

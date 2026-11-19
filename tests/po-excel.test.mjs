@@ -5,7 +5,7 @@ import { buildPOTemplate, parsePOUpload, buildInventoryTemplate, parseInventoryU
 const items=[
   {id:11,sku:"HEL-001",name:"Helmet shell",category:"Safety Equipment",supplierName:"Supun Main",unit:"pieces",stock:80,cost:230.50,active:1},
   {id:12,sku:"ELE-002",name:"Copper wire 2.5mm",category:"Electrical",supplierName:"Supun Electrical",unit:"rolls",stock:30,cost:1250,active:1},
-  {id:13,sku:"",name:"Simple boxes",category:"Packaging",supplierName:"Supun Main",unit:"boxes",stock:0,cost:0,active:1}
+  {id:13,sku:"BOX-013",name:"Simple boxes",category:"Packaging",supplierName:"Supun Main",unit:"boxes",stock:0,cost:0,active:1}
 ];
 
 test("Excel template is a genuine XLSX ZIP file and preview imports correct items",()=>{
@@ -32,11 +32,11 @@ test("Rejects decimal, negative, and duplicate quantities",()=>{
   assert.throws(()=>parsePOUpload(buildPOTemplate(repeated,{11:10}),items),/entered twice/);
 });
 
-test("Rejects missing/inactive product IDs and changed item codes",()=>{
-  const old=[{...items[0],sku:"OLD-SKU"}];
-  assert.throws(()=>parsePOUpload(buildPOTemplate(old,{11:1}),items),/Item Code does not match/);
-  assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],id:100}],{100:1}),items),/not found/);
-  assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],active:0}],{11:1}),[{...items[0],active:0}]),/not found/);
+test("Accepts new Item Codes and rejects archived products",()=>{
+  const fresh={sku:"NEW-100",name:"New Excel item",category:"New category",unit:"sets",cost:25};
+  const imported=parsePOUpload(buildPOTemplate([fresh],{"NEW-100":4}),items);
+  assert.deepEqual(imported[0],{...fresh,qty:4,isNew:true});
+  assert.throws(()=>parsePOUpload(buildPOTemplate([{...items[0],active:0}],{11:1}),[{...items[0],active:0}]),/archived/);
 });
 
 test("Rejects unrelated or very large uploads safely",()=>{
@@ -79,25 +79,23 @@ test("Current Stock parser accepts a new product without ID and rejects invalid 
 });
 
 
-test("PO template uses current catalog, category, supplier, stock and bordered formulas",()=>{
+test("PO template supports existing and new products with bordered formulas",()=>{
   assert.deepEqual(poHeaders,[
-    "Product ID","Item Code","Item Name","Category","Usual Supplier",
-    "Unit","Available Stock","Order Quantity","Unit Cost (Rs)","Total Cost (Rs)"
+    "Item Code","Item Name","Category","Unit","Order Quantity","Unit Cost (Rs)","Total Cost (Rs)"
   ]);
   assert.equal(inventoryHeaders.length,11); // inventory count sheet stays separate
   const source=buildPOTemplate(items,{11:4});
   const xml=source.toString("utf8");
   assert.match(xml,/Safety Equipment/);
-  assert.match(xml,/Supun Main/);
-  assert.match(xml,/Available Stock/);
   assert.match(xml,/Order Quantity/);
-  assert.match(xml,/H2/);
-  assert.match(xml,/H2\*I2/);
+  assert.match(xml,/E2/);
+  assert.match(xml,/E2\*F2/);
   assert.match(xml,/dataValidations count="2"/);
   assert.match(xml,/left style="thin"/);
   assert.match(xml,/How to Fill/);
   const imported=parsePOUpload(source,items);
   assert.deepEqual(imported.map(x=>({pid:x.pid,qty:x.qty,cost:x.cost})),[{pid:11,qty:4,cost:230.5}]);
+  assert.equal(buildPOTemplate([]).readUInt32LE(0),0x04034b50);
 });
 
 test("PO Excel cannot be confused with the 11-column Current Stock import",()=>{

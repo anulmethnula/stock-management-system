@@ -70,7 +70,7 @@ export const poHeaders=[
 const PO_COLS="ABCDEFG";
 export function buildPOTemplate(products, quantitiesById = {}) {
   if(products.length>1000)throw new Error("Too many items to export. Please split the catalogue.");
-  const lastRow=Math.max(501,products.length+1),rows=[
+  const lastRow=Math.max(201,products.length+1),rows=[
     '<row r="1" ht="36" customHeight="1">'+poHeaders.map((v,i)=>xmlCell(PO_COLS[i]+"1",v,1)).join("")+"</row>"
   ];
   for(let i=0;i<lastRow-1;i++){
@@ -97,16 +97,16 @@ export function buildPOTemplate(products, quantitiesById = {}) {
   const guide=[
     ["STOCKEASY — PURCHASE ORDER BULK REQUEST",""],
     ["1. CHOOSE SUPPLIER","Choose the requested supplier/branch in the StockEasy PO form before uploading."],
-    ["2. GET LATEST ITEMS","Download this template again after adding or editing items or importing existing stock."],
-    ["3. ORDER QUANTITY","Fill ONLY column H (Order Quantity) for the items you want to request. Leave other quantities blank."],
-    ["4. UNIT COST","Column I is the proposed buying cost. Review it and update if needed."],
-    ["5. REFERENCE ONLY","Product ID, Code, Name, Category, Usual Supplier, Unit and Available Stock come from Items."],
-    ["6. AUTO TOTAL","Column J calculates Order Quantity × Unit Cost. Do not edit the formula."],
+    ["2. EXISTING ITEMS","Use the saved Item Code. Name, Category and Unit may be blank or must match Inventory."],
+    ["3. NEW ITEMS","Enter a unique Item Code, Item Name, Category and Unit. The sheet has 200 order rows."],
+    ["4. ORDER QUANTITY","Enter a positive whole number in column E."],
+    ["5. UNIT COST","Enter a non-negative buying price in column F."],
+    ["6. AUTO TOTAL","Column G calculates Order Quantity × Unit Cost. Do not edit the formula."],
     ["7. PREVIEW","Upload Excel; review the selected products, quantities and prices; save PO only after checking."],
     ["8. STOCK UPDATE","Creating a PO does NOT change stock. Stock increases only when staff save a GRN for actual goods received."],
-    ["9. SUPPLIER NOTE","Usual Supplier is informational. You may request an item from another selected branch."],
+    ["9. SUPPLIER NOTE","New products use the supplier selected in the StockEasy PO form."],
     ["10. LIMIT","Maximum 200 different items per purchase order. Split larger purchase orders."],
-    ["IMPORTANT","Do not upload the 11-column Current Stock Migration file here; it changes final physical counts, not PO requests."]
+    ["IMPORTANT","Saving a PO creates missing products with stock 0. Only a GRN increases stock."]
   ];
   const guideRows=guide.map((r,i)=>'<row r="'+(i+1)+'" ht="27" customHeight="1">'
     +xmlCell("A"+(i+1),r[0],i===0?1:0)+xmlCell("B"+(i+1),r[1],0)+"</row>").join("");

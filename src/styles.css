@@ -669,6 +669,8 @@ input:focus,select:focus,textarea:focus{background:var(--card);box-shadow:0 0 0 
 .po-excel-error svg,.po-excel-success svg{flex:none}
 .po-excel-success span{flex:1}
 .po-excel-success .icon-btn{width:24px;height:24px;margin:-4px -4px 0 0}
+.po-excel-preview{display:grid;gap:6px;max-height:190px;margin-top:9px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:auto}.po-excel-preview>div{display:grid;grid-template-columns:70px minmax(120px,.8fr) minmax(220px,1.6fr);align-items:center;gap:9px;padding:7px 8px;border-bottom:1px solid var(--line);font-size:10px}.po-excel-preview>div:last-child{border-bottom:0}.po-excel-preview .state-pill{justify-content:center;padding:3px 7px;font-size:8px}.po-excel-preview strong,.po-excel-preview small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-excel-preview small{color:var(--muted)}
+@media(max-width:600px){.po-excel-preview>div{grid-template-columns:65px 1fr}.po-excel-preview small{grid-column:1/-1;white-space:normal}}
 .po-excel-optional{font-size:12px;font-weight:500;color:var(--muted)}
 @media(max-width:560px){
   .po-excel{padding:12px}

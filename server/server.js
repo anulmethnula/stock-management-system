@@ -398,6 +398,16 @@ app.post("/api/po-import", requireEdit("purchase_orders"),
     check(Buffer.isBuffer(req.body)&&req.body.length>0,"Please select a .xlsx file to upload.");
     const products=db.prepare("SELECT id,sku,name,category,unit,active,cost FROM products").all();
     const items=parsePOUpload(req.body,products);
+    if(req.query.sid!==undefined){
+      const sid=ident(req.query.sid);check(find("suppliers",sid).active,"Choose an active supplier before uploading.");
+      const names=new Set();
+      for(const item of items.filter(x=>x.isNew)){
+        const key=item.name.trim().toLocaleLowerCase("en");
+        check(!names.has(key),"New product '"+item.name+"' is entered more than once.",422);names.add(key);
+        check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=?").get(item.name,sid),
+          "Product '"+item.name+"' already exists for the selected supplier with another Item Code.",422);
+      }
+    }
     return {items,count:items.length,newCount:items.filter(x=>x.isNew).length,existingCount:items.filter(x=>!x.isNew).length,total:items.reduce((n,l)=>n+l.qty*l.cost,0)};
   })
 );
