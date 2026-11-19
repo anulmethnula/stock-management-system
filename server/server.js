@@ -293,13 +293,15 @@ function productFields(b) {
   const category=required(b.category,"category",40);
   check(db.prepare("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND active=1").get(category),"Choose an active category.",409);
   const img = b.img && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(b.img) && b.img.length < 3000000 ? b.img : null;
-  return [required(b.name, "item name"), str(b.sku, 60) || null, category, str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
+  return [required(b.name, "item name"), required(b.sku, "item code", 60), category, str(b.emoji, 8) || "📦", img, sid, required(b.unit, "unit", 40),
     money(b.cost, "Buying price"), money(b.sell ?? 0, "Selling price"), amount(b.reorder ?? 5, "Low-stock warning")];
 }
 app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
   const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock");
-  if(b.sku)check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE LIMIT 1").get(str(b.sku,60)),
+  check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE LIMIT 1").get(fields[1]),
     "Item Code already exists. Edit the existing item instead.",409);
+  check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=? LIMIT 1").get(fields[0],fields[5]),
+    "This product already exists for the selected supplier. Edit the existing item instead.",409);
   check(!opening||cleanPermissions(req.user.permissions,req.user.role).stock_adjustments==="edit","Opening stock requires stock correction permission.",403);
   const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
@@ -309,8 +311,10 @@ app.post("/api/products", requireEdit("products"), run(req => transaction(() => 
 app.put("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id, b = req.body || {};
   const fields = productFields(b);
-  if(b.sku)check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE AND id<>? LIMIT 1").get(str(b.sku,60),id),
+  check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE AND id<>? LIMIT 1").get(fields[1],id),
     "Item Code already belongs to another product.",409);
+  check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=? AND id<>? LIMIT 1").get(fields[0],fields[5],id),
+    "This product already exists for the selected supplier.",409);
   db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
     .run(...fields, b.active === 0 ? 0 : 1, id);
   // Stock is deliberately not editable here. Use adjustment for an auditable change.
@@ -350,7 +354,25 @@ app.delete("/api/categories/:id",requireEdit("products"),run(req=>transaction(()
 function poPayload(b) {
   const sid = ident(b.sid);
   check(find("suppliers", sid).active, "Choose an active Supun branch.");
-  const lines = validateLines(b.items, "order").map(l => ({ ...l, cost: money(l.cost ?? l.product.cost, "Buying price") }));
+  const existing=Array.isArray(b.items)?b.items:[],fresh=Array.isArray(b.newItems)?b.newItems:[];
+  check(existing.length+fresh.length>0&&existing.length+fresh.length<=200,"Add at least one item (maximum 200).");
+  const lines = existing.length?validateLines(existing, "order").map(l => ({ ...l, cost: money(l.cost ?? l.product.cost, "Buying price") })):[];
+  const seenCodes=new Set(lines.map(l=>String(l.product.sku||"").trim().toLocaleLowerCase("en")));
+  const seenNames=new Set(lines.map(l=>String(l.product.name).trim().toLocaleLowerCase("en")));
+  for(const raw of fresh){
+    const sku=required(raw.sku,"item code",60),name=required(raw.name,"item name"),category=required(raw.category,"category",40),unit=required(raw.unit,"unit",40);
+    const key=sku.toLocaleLowerCase("en"),nameKey=name.toLocaleLowerCase("en"),qty=amount(raw.qty,"Quantity",1),cost=money(raw.cost,"Buying price");
+    check(!seenCodes.has(key),"The same Item Code was added twice.");seenCodes.add(key);
+    check(!seenNames.has(nameKey),"The same product was added twice.");seenNames.add(nameKey);
+    check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE").get(sku),"Item Code "+sku+" already exists. Upload a fresh PO template.",409);
+    check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=?").get(name,sid),"Product "+name+" already exists for this supplier.",409);
+    const savedCategory=db.prepare("SELECT id,active FROM product_categories WHERE name=? COLLATE NOCASE").get(category);
+    if(!savedCategory)db.prepare("INSERT INTO product_categories(name) VALUES(?)").run(category);
+    else if(!savedCategory.active)db.prepare("UPDATE product_categories SET active=1 WHERE id=?").run(savedCategory.id);
+    const pid=db.prepare("INSERT INTO products(name,sku,category,emoji,supplier_id,unit,cost,sale_price,stock,reorder) VALUES(?,?,?,'📦',?,?,?,0,0,5)")
+      .run(name,sku,category,sid,unit,cost).lastInsertRowid;
+    lines.push({pid,qty,cost,product:find("products",pid)});
+  }
   return { sid, lines };
 }
 // Bulk entry: download a real .xlsx workbook, then preview an uploaded workbook.
@@ -360,7 +382,6 @@ app.get("/api/po-template", (req,res) => {
   if(access==="none") return res.status(403).json({error:"You do not have access to purchase orders."});
   try {
     const products=db.prepare("SELECT p.id,p.sku,p.name,p.category,p.unit,p.stock,p.cost,s.name supplierName FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.category COLLATE NOCASE,p.name COLLATE NOCASE,p.id").all();
-    if(!products.length) return res.status(409).json({error:"No active items yet. Import your existing products from Items → Bulk Upload Excel before creating a purchase order."});
     const workbook=buildPOTemplate(products);
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition",'attachment; filename="StockEasy_PO_Template.xlsx"');
@@ -377,7 +398,7 @@ app.post("/api/po-import", requireEdit("purchase_orders"),
     check(Buffer.isBuffer(req.body)&&req.body.length>0,"Please select a .xlsx file to upload.");
     const products=db.prepare("SELECT id,sku,name,category,unit,active,cost FROM products").all();
     const items=parsePOUpload(req.body,products);
-    return {items,count:items.length,total:items.reduce((n,l)=>n+l.qty*l.cost,0)};
+    return {items,count:items.length,newCount:items.filter(x=>x.isNew).length,existingCount:items.filter(x=>!x.isNew).length,total:items.reduce((n,l)=>n+l.qty*l.cost,0)};
   })
 );
 app.post("/api/pos", requireEdit("purchase_orders"), run(req => transaction(() => {

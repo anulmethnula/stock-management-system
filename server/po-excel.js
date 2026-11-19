@@ -65,36 +65,35 @@ function buildZip(entries) {
 // Purchase order template is intentionally different from the 11-column
 // inventory count template: quantities here are NEW REQUESTS, not final stock.
 export const poHeaders=[
-  "Product ID","Item Code","Item Name","Category","Usual Supplier",
-  "Unit","Available Stock","Order Quantity","Unit Cost (Rs)","Total Cost (Rs)"
+  "Item Code","Item Name","Category","Unit","Order Quantity","Unit Cost (Rs)","Total Cost (Rs)"
 ];
-const PO_COLS="ABCDEFGHIJ";
+const PO_COLS="ABCDEFG";
 export function buildPOTemplate(products, quantitiesById = {}) {
   if(products.length>1000)throw new Error("Too many items to export. Please split the catalogue.");
-  const lastRow=Math.max(2,products.length+1),rows=[
+  const lastRow=Math.max(501,products.length+1),rows=[
     '<row r="1" ht="36" customHeight="1">'+poHeaders.map((v,i)=>xmlCell(PO_COLS[i]+"1",v,1)).join("")+"</row>"
   ];
-  products.forEach((p,i)=>{
-    const row=i+2;
-    const reference=[p.id,p.sku||"",p.name,p.category||"",p.supplierName||"",p.unit||"pieces",Number(p.stock)||0];
-    const qty=quantitiesById[p.id];
+  for(let i=0;i<lastRow-1;i++){
+    const row=i+2,p=products[i];
+    const reference=p?[p.sku||"",p.name,p.category||"",p.unit||"pieces"]:["","","",""];
+    const qty=p?(quantitiesById[p.id]??quantitiesById[p.sku]):undefined;
     const inputs=reference.map((v,col)=>xmlCell(PO_COLS[col]+row,v,0)).join("")
-      +(qty!==undefined?xmlCell("H"+row,Number(qty),2):'<c r="H'+row+'" s="2"/>')
-      +xmlCell("I"+row,Number(p.cost)||0,3)
-      +'<c r="J'+row+'" s="4"><f>IF(OR(H'+row+'="",H'+row+'=0),"",H'+row+'*I'+row+')</f></c>';
+      +(qty!==undefined?xmlCell("E"+row,Number(qty),2):'<c r="E'+row+'" s="2"/>')
+      +xmlCell("F"+row,p?Number(p.cost)||0:"",3)
+      +'<c r="G'+row+'" s="4"><f>IF(OR(E'+row+'="",E'+row+'=0,F'+row+'=""),"",E'+row+'*F'+row+')</f></c>';
     rows.push('<row r="'+row+'" ht="23" customHeight="1">'+inputs+"</row>");
-  });
-  const widths=[14,20,40,23,31,16,19,19,21,22];
+  }
+  const widths=[20,40,24,17,19,21,22];
   const columns=widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join("");
   const validations=[
-    '<dataValidation type="whole" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid PO quantity" error="Enter a whole number from 1 to 100000000, or leave blank." sqref="H2:H'+lastRow+'"><formula1>1</formula1><formula2>100000000</formula2></dataValidation>',
-    '<dataValidation type="decimal" operator="between" allowBlank="0" showErrorMessage="1" errorTitle="Invalid buying price" error="Enter a non-negative unit cost." sqref="I2:I'+lastRow+'"><formula1>0</formula1><formula2>1000000000000</formula2></dataValidation>'
+    '<dataValidation type="whole" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid PO quantity" error="Enter a whole number from 1 to 100000000, or leave blank." sqref="E2:E'+lastRow+'"><formula1>1</formula1><formula2>100000000</formula2></dataValidation>',
+    '<dataValidation type="decimal" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="Invalid buying price" error="Enter a non-negative unit cost." sqref="F2:F'+lastRow+'"><formula1>0</formula1><formula2>1000000000000</formula2></dataValidation>'
   ].join("");
   const sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     +'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
     +'<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
     +'<sheetFormatPr defaultRowHeight="22"/><cols>'+columns+'</cols><sheetData>'+rows.join("")+'</sheetData>'
-    +'<autoFilter ref="A1:J'+lastRow+'"/><dataValidations count="2">'+validations+'</dataValidations></worksheet>';
+    +'<autoFilter ref="A1:G'+lastRow+'"/><dataValidations count="2">'+validations+'</dataValidations></worksheet>';
   const guide=[
     ["STOCKEASY — PURCHASE ORDER BULK REQUEST",""],
     ["1. CHOOSE SUPPLIER","Choose the requested supplier/branch in the StockEasy PO form before uploading."],
@@ -227,43 +226,51 @@ export function parsePOUpload(buffer,products){
   if(poHeaders.some((name,i)=>String(header[PO_COLS[i]]||"").trim()!==name))
     throw new Error("Wrong PO Excel columns. Download a fresh PO template from StockEasy. Do not use the Current Stock Migration template.");
   const selected=[],errors=[],seen=new Set();
-  const byId=new Map(products.map(p=>[Number(p.id),p]));
   const norm=v=>String(v??"").trim().toLocaleLowerCase("en");
+  const bySku=new Map();
+  for(const product of products){
+    const key=norm(product.sku);
+    if(!key)continue;
+    if(!bySku.has(key))bySku.set(key,[]);
+    bySku.get(key).push(product);
+  }
   for(const row of rows.filter(x=>x.number>1)){
-    const raw=String(row.values.H??"").trim();
+    const raw=String(row.values.E??"").trim();
     if(raw===""||raw==="0")continue;
     const qty=Number(raw);
     if(!Number.isSafeInteger(qty)||qty<1||qty>100000000){
       errors.push("Row "+row.number+": Order Quantity must be a positive whole number.");continue;
     }
-    const id=Number(row.values.A);
-    const product=byId.get(id);
-    if(!product||!product.active){
-      errors.push("Row "+row.number+": Product ID "+String(row.values.A??"")+" was not found or has been archived. Download a new template.");continue;
+    const sku=String(row.values.A??"").trim();
+    if(!sku){errors.push("Row "+row.number+": Item Code is required.");continue;}
+    const key=norm(sku),matches=bySku.get(key)||[];
+    if(matches.length>1){errors.push("Row "+row.number+": Item Code '"+sku+"' is duplicated in Inventory.");continue;}
+    if(seen.has(key)){errors.push("Row "+row.number+": Item Code '"+sku+"' was entered twice.");continue;}
+    seen.add(key);
+    const product=matches[0]||null;
+    if(product&&!product.active){errors.push("Row "+row.number+": "+product.name+" is archived.");continue;}
+    const name=String(row.values.B??"").trim(),category=String(row.values.C??"").trim(),unit=String(row.values.D??"").trim();
+    if(product&&((name&&norm(name)!==norm(product.name))||(category&&norm(category)!==norm(product.category))||(unit&&norm(unit)!==norm(product.unit)))){
+      errors.push("Row "+row.number+": Item details do not match the saved product for code '"+sku+"'.");continue;
     }
-    if(seen.has(id)){errors.push("Row "+row.number+": "+product.name+" was entered twice.");continue;}
-    seen.add(id);
-    if(norm(row.values.B)!==norm(product.sku)){
-      errors.push("Row "+row.number+": Item Code does not match "+product.name+". Download a new template.");continue;
+    if(!product&&(!name||!category||!unit)){
+      errors.push("Row "+row.number+": New items require Item Name, Category and Unit.");continue;
     }
-    if(norm(row.values.C)!==norm(product.name)||norm(row.values.D)!==norm(product.category)||norm(row.values.F)!==norm(product.unit)){
-      errors.push("Row "+row.number+": Item details for "+product.name+" have changed. Download a fresh PO template.");continue;
-    }
-    // The item's usual supplier is only a reference. The PO supplier is
-    // chosen once in the app and may be a different Supun branch.
-    const costRaw=String(row.values.I??"").trim();
-    const cost=costRaw===""?Number(product.cost):Number(costRaw);
+    const costRaw=String(row.values.F??"").trim();
+    const cost=costRaw===""&&product?Number(product.cost):Number(costRaw);
     if(!Number.isFinite(cost)||cost<0||cost>1e12){
       errors.push("Row "+row.number+": Unit Cost must be a non-negative amount.");continue;
     }
-    selected.push({pid:id,qty,cost:Math.round(cost*100)/100,name:product.name,sku:product.sku||""});
+    selected.push(product
+      ?{pid:product.id,qty,cost:Math.round(cost*100)/100,name:product.name,sku:product.sku||"",category:product.category,unit:product.unit,isNew:false}
+      :{sku,name,category,unit,qty,cost:Math.round(cost*100)/100,isNew:true});
     if(selected.length>200){errors.push("A purchase order can contain a maximum of 200 different items.");break;}
   }
   if(errors.length){
     const e=new Error("Fix the PO Excel:\n"+errors.slice(0,8).join("\n")+(errors.length>8?"\n...and "+(errors.length-8)+" more.":""));
     e.status=422;throw e;
   }
-  if(!selected.length){const e=new Error("No order quantities entered. Enter numbers in column H (Order Quantity) and upload again.");e.status=422;throw e;}
+  if(!selected.length){const e=new Error("No order quantities entered. Enter numbers in column E (Order Quantity) and upload again.");e.status=422;throw e;}
   return selected;
 }
 

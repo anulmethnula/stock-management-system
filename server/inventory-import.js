@@ -82,10 +82,8 @@ export function registerInventoryImportRoutes(app,h){
           continue;
         }
         if(p)seenProducts.set(p.id,row.row);
-        if(!p){
-          const sameName=products.find(x=>normalize(x.name)===normalize(row.name)&&x.supplier_id===matches[0].id);
-          if(sameName){errors.push("Row "+row.row+": '"+row.name+"' already exists for this supplier with a different item code. Use its correct Product ID or Item Code.");continue;}
-        }
+        const sameName=products.find(x=>x.id!==p?.id&&normalize(x.name)===normalize(row.name)&&x.supplier_id===matches[0].id);
+        if(sameName){errors.push("Row "+row.row+": '"+row.name+"' already exists for this supplier with a different item code. Use its correct Product ID or Item Code.");continue;}
         const cat=categories.find(c=>normalize(c.name)===normalize(row.category));
         const categoryName=canonicalCategories.get(normalize(row.category))||row.category;
         canonicalCategories.set(normalize(row.category),categoryName);
@@ -152,6 +150,8 @@ export function registerInventoryImportRoutes(app,h){
         check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=?").get(item.name,item.sid),
           "Item "+item.name+" now exists. Upload again.",409);
       }
+      check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=? AND id<>? LIMIT 1").get(item.name,item.sid,item.id||0),
+        "Item "+item.name+" now exists for this supplier. Upload again.",409);
       const supplier=db.prepare("SELECT id,name,active FROM suppliers WHERE id=?").get(item.sid);
       check(supplier&&supplier.active===1&&normalize(supplier.name)===normalize(item.supplier),
         "A supplier has changed since preview. Upload again.",409);

@@ -372,11 +372,13 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
   const actions=p=><div className="inventory-actions">{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
   const status=p=>!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low stock":"Out of stock"}</Pill>;
   return <div className="inventory-page">
-    <SectionHeading title="Inventory items" sub="Manage current stock, item details and bulk Excel updates." action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
-    {canEdit&&<div className="inventory-secondary-actions">
-      <button className="btn ghost sm" type="button" onClick={()=>setModal({type:"categories"})}><Pencil size={15}/> Manage Categories</button>
-      {accessLevel(user,"stock_adjustments")==="edit"&&<button className="btn sm" type="button" onClick={()=>setModal({type:"inventory-bulk"})}><Upload size={15}/> Bulk Upload Excel</button>}
-    </div>}
+    <div className="section-heading inventory-page-heading"><div><h1>Inventory items</h1><p className="sub">Manage current stock, item details and bulk Excel updates.</p></div>
+      {canEdit&&<div className="inventory-header-actions">
+        <button className="btn ghost sm" type="button" onClick={()=>setModal({type:"categories"})}><Pencil size={15}/> Manage Categories</button>
+        {accessLevel(user,"stock_adjustments")==="edit"&&<button className="btn ghost sm" type="button" onClick={()=>setModal({type:"inventory-bulk"})}><Upload size={15}/> Bulk Upload Excel</button>}
+        <button className="btn" type="button" onClick={()=>setModal({type:"product"})}><Plus size={17}/> Add item</button>
+      </div>}
+    </div>
     <div className="inventory-summary">{[[Package,"Total items",counts.total,"all","green"],[Check,"In stock",counts.ok,"ok","blue"],[AlertTriangle,"Low stock",counts.low,"low","amber"],[X,"Out of stock",counts.out,"out","red"]].map(([Icon,label,value,key,tone])=><button key={key} className={`inventory-summary-card ${tone} ${stockFilter===key?"on":""}`} onClick={()=>setStockFilter(key)}><span><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></button>)}</div>
     <div className="inventory-tools"><SearchBox value={q} change={setQ} placeholder="Search item name, code, category or supplier..."/><select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select><select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label><div className="inventory-view-toggle" role="group" aria-label="Inventory view"><button className={view==="grid"?"on":""} onClick={()=>setView("grid")} title="Grid view"><Boxes size={17}/></button><button className={view==="table"?"on":""} onClick={()=>setView("table")} title="Table view"><ClipboardList size={17}/></button></div></div>
     {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>{p.sku||"No item code"}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Available stock</b><strong>{p.stock}</strong>{p.damagedStock>0&&<small>{p.damagedStock} quarantined</small>}</span><span><b>Prices</b>{rs(p.cost)} / {rs(p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>{status(p)}{actions(p)}</div>)}</div>}
@@ -756,9 +758,16 @@ function ProductForm({modal,close,busy,action,d,refresh,user,openBulk}) {
   const p=modal.record,branches=active(d.branches);
   const categories=d.categories||[];
   const defaultCategory=p?.category||categories.find(c=>c.active)?.name||"";
-  const [f,setF]=useState(()=>p?{...p}:{name:"",sku:"",category:defaultCategory,emoji:"📦",img:null,sid:branches[0]?.id||"",unit:"units",cost:0,sell:0,stock:0,reorder:5,active:1});
+  const [f,setF]=useState(()=>p?{...p}:{name:"",sku:"",category:defaultCategory,emoji:"📦",img:null,sid:branches[0]?.id||"",unit:"pieces",cost:0,sell:0,stock:0,reorder:5,active:1});
   const [categoryOpen,setCategoryOpen]=useState(false),[categoryName,setCategoryName]=useState(""),[categoryBusy,setCategoryBusy]=useState(false),[categoryError,setCategoryError]=useState("");
   const set=(key,val)=>setF(o=>({...o,[key]:val}));
+  const normalize=value=>String(value||"").trim().toLocaleLowerCase("en");
+  const units=[...new Set(["pieces","boxes","sets","packs","pairs","rolls","meters","kilograms","liters",...d.products.map(x=>x.unit).filter(Boolean)])];
+  const duplicateCode=f.sku.trim()?d.products.find(x=>x.id!==p?.id&&normalize(x.sku)===normalize(f.sku)):null;
+  const duplicateProduct=d.products.find(x=>x.id!==p?.id&&x.sid===Number(f.sid)&&normalize(x.name)===normalize(f.name));
+  const quantity=p?number(p.stock):number(f.stock),totalCost=quantity*number(f.cost),totalSelling=quantity*number(f.sell);
+  const valid=!!f.sku.trim()&&!!f.name.trim()&&!!f.category&&!!f.sid&&!!f.unit.trim()&&!duplicateCode&&!duplicateProduct;
+  const submit=e=>{e.preventDefault();if(!valid)return;const payload={name:f.name,sku:f.sku,category:f.category,emoji:f.emoji,img:f.img,sid:Number(f.sid),unit:f.unit,cost:f.cost,sell:f.sell,reorder:f.reorder,active:f.active};if(!p)payload.stock=f.stock;action("/products"+(p?"/"+p.id:""),p?"PUT":"POST",payload,"Item saved.");};
   const addCategory=async e=>{e.preventDefault();setCategoryBusy(true);setCategoryError("");try{const result=await request("/categories","POST",{name:categoryName});await refresh();set("category",result.name);setCategoryName("");setCategoryOpen(false);}catch(error){setCategoryError(error.message);}finally{setCategoryBusy(false);}};
   const upload=e=>{
     const file=e.target.files?.[0]; if(!file)return;
@@ -772,26 +781,32 @@ function ProductForm({modal,close,busy,action,d,refresh,user,openBulk}) {
     };img.src=reader.result;};
     reader.readAsDataURL(file);
   };
-  return <Modal title={p?"Edit item":"Add new item"} sub="Pictures and simple names help staff find items quickly." close={close}>
-    <form onSubmit={e=>{e.preventDefault();action("/products"+(p?"/"+p.id:""),p?"PUT":"POST",f,"Item saved.");}}>
-      <label>Item name *</label><input autoFocus required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: CAMY Air Conditioner"/>
-      <label>Item code (optional)</label><input value={f.sku||""} onChange={e=>set("sku",e.target.value)} placeholder="ITEM-001"/>
-      <label>Category *</label><div className="category-field"><select required value={f.category} onChange={e=>set("category",e.target.value)}><option value="">Choose a category</option>{categories.filter(c=>c.active||c.name===f.category).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select><button className="btn ghost sm" type="button" onClick={()=>setCategoryOpen(true)}><Plus size={15}/> Add New Category</button></div>
-      <label>Picture or icon</label><div className="upload-row"><Picture p={f}/>
+  return <Modal wide className="product-form-modal" title={p?"Edit item":"Add new item"} sub="Uses the same product structure and rules as the Stock Migration Excel template." close={close}>
+    <form className="product-form" onSubmit={submit}>
+      <div className="product-id-note"><Package size={18}/><span><small>Product ID</small><strong>{p?p.id:"Generated automatically when saved"}</strong></span></div>
+      <div className="product-form-grid">
+        <div className="product-form-field"><label>1. Item Code (SKU) *</label><input autoFocus required maxLength="60" value={f.sku||""} onChange={e=>set("sku",e.target.value)} placeholder="ITEM-001"/>{duplicateCode&&<small className="field-error">This code belongs to {duplicateCode.name}.</small>}</div>
+        <div className="product-form-field"><label>2. Item Name *</label><input required value={f.name} onChange={e=>set("name",e.target.value)} placeholder="Example: CAMY Air Conditioner"/>{duplicateProduct&&<small className="field-error">This product already exists for the selected supplier.</small>}</div>
+        <div className="product-form-field"><label>3. Category *</label><div className="category-field"><select required value={f.category} onChange={e=>set("category",e.target.value)}><option value="">Choose a category</option>{categories.filter(c=>c.active||c.name===f.category).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select><button className="btn ghost sm" type="button" onClick={()=>setCategoryOpen(true)}><Plus size={15}/> New</button></div></div>
+        <div className="product-form-field"><label>4. Supplier / Branch *</label><select required value={f.sid} onChange={e=>set("sid",Number(e.target.value))}><option value="">Select a supplier</option>{d.branches.filter(x=>x.active||x.id===f.sid).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+        <div className="product-form-field"><label>5. Unit *</label><input required list="stockeasy-product-units" maxLength="40" value={f.unit||""} onChange={e=>set("unit",e.target.value)} placeholder="pieces"/><datalist id="stockeasy-product-units">{units.map(unit=><option key={unit} value={unit}/>)}</datalist></div>
+        <div className="product-form-field"><label>6. Quantity {p?"(Current Stock)":"(Starting Stock)"}</label><input readOnly={!!p} disabled={!p&&accessLevel(user,"stock_adjustments")!=="edit"} type="number" min="0" step="1" value={quantity} onChange={e=>set("stock",e.target.value)} required/>{p&&<small>Use Stock Correction to change this quantity.</small>}</div>
+        <div className="product-form-field"><label>7. Unit Cost (Rs) *</label><input type="number" min="0" step=".01" value={f.cost} onChange={e=>set("cost",e.target.value)} required/></div>
+        <div className="product-form-field"><label>8. Selling Price (Rs) *</label><input type="number" min="0" step=".01" value={f.sell} onChange={e=>set("sell",e.target.value)} required/></div>
+        <div className="product-form-field product-total"><label>9. Total Cost</label><input readOnly value={rs(totalCost)} aria-label="Total Cost"/><small>Quantity × Unit Cost</small></div>
+        <div className="product-form-field product-total"><label>10. Total Selling</label><input readOnly value={rs(totalSelling)} aria-label="Total Selling"/><small>Quantity × Selling Price</small></div>
+      </div>
+      <div className="product-form-options">
+        <div><label>Picture or icon</label><div className="upload-row"><Picture p={f}/>
         <label className="btn ghost sm file-picker"><Camera size={16}/> Upload photo<input type="file" hidden accept="image/*" onChange={upload}/></label>
         <select aria-label="Choose icon" value={f.emoji} onChange={e=>set("emoji",e.target.value)} className="emoji-picker">
           {["📦","🪖","⚡","🔌","💡","🔋","🧤","🥽","🦺","🔧","⚙️","🧰","🔩","🛠️","🧯","🧵"].map(v=><option key={v}>{v}</option>)}</select>
-        {f.img&&<button type="button" className="text-button" onClick={()=>set("img",null)}>Remove photo</button>}</div>
-      <label>Usual supplier *</label><select required value={f.sid} onChange={e=>set("sid",Number(e.target.value))}>
-        <option value="">Select a supplier</option>{d.branches.filter(x=>x.active||x.id===f.sid).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
-      <div className="notice"><Info size={18}/> You can still request this item from any other supplier in a PO.</div>
-      <div className="two"><div><label>Buying price (Rs)</label><input type="number" min="0" step=".01" value={f.cost} onChange={e=>set("cost",e.target.value)} required/></div>
-        <div><label>Selling price (Rs)</label><input type="number" min="0" step=".01" value={f.sell} onChange={e=>set("sell",e.target.value)} required/></div></div>
-      <div className="two">{!p&&<div><label>Starting stock</label><input disabled={accessLevel(user,"stock_adjustments")!=="edit"} type="number" min="0" step="1" value={f.stock} onChange={e=>set("stock",e.target.value)} required/></div>}
-        <div><label>Warn when stock reaches</label><input type="number" min="0" step="1" value={f.reorder} onChange={e=>set("reorder",e.target.value)} required/></div></div>
-      {p&&<div className="notice"><Info size={18}/> Available stock: <strong>{p.stock}</strong> · Quarantined: <strong>{p.damagedStock||0}</strong>. Use "Correct stock" for changes, so history is saved.</div>}
+        {f.img&&<button type="button" className="text-button" onClick={()=>set("img",null)}>Remove photo</button>}</div></div>
+        <div><label>Low-stock warning</label><input type="number" min="0" step="1" value={f.reorder} onChange={e=>set("reorder",e.target.value)} required/><small>Warn when available stock reaches this quantity.</small></div>
+      </div>
+      <div className="notice"><Info size={18}/><span>{p?<>Stock remains <strong>{p.stock}</strong> available and <strong>{p.damagedStock||0}</strong> quarantined when details are updated. Use Stock Correction for quantity changes.</>:"Starting stock creates an audited Opening balance. Later supplier receipts must use PO → GRN."}</span></div>
       {p&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Active item</label>}
-      <Controls busy={busy} close={close} valid={!!f.name.trim()&&!!f.sid&&!!f.category} label={p?"Update item":"Add item"}/>
+      <Controls busy={busy} close={close} valid={valid} label={p?"Update item":"Add item"}/>
       {accessLevel(user,"stock_adjustments")==="edit"&&<div className="notice" style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Many items? Use your Excel template.</span><button type="button" className="btn ghost sm" onClick={openBulk}><Upload size={15}/> Bulk Upload Excel</button></div>}
     </form>
     {categoryOpen&&<div className="category-mini-over" onMouseDown={e=>{if(e.target===e.currentTarget)setCategoryOpen(false)}}><section className="category-mini-modal" role="dialog" aria-modal="true" aria-label="Add new category"><div className="modal-head"><div><h3>Add new category</h3><p className="mute">Create a reusable inventory category.</p></div><button className="icon-btn" type="button" onClick={()=>setCategoryOpen(false)}><X size={18}/></button></div><form onSubmit={addCategory}><label>Category name *</label><input autoFocus required maxLength="40" value={categoryName} onChange={e=>setCategoryName(e.target.value)} placeholder="Example: Spare parts"/>{categoryError&&<p className="field-error">{categoryError}</p>}<div className="form-actions"><button className="btn" disabled={categoryBusy||!categoryName.trim()}><Check size={16}/>{categoryBusy?"Saving…":"Save Category"}</button><button className="btn ghost" type="button" onClick={()=>setCategoryOpen(false)}>Cancel</button></div></form></section></div>}
@@ -1017,7 +1032,7 @@ function InventoryBulkForm({d,close,action,busy}) {
   const reviewRows=showUnchanged?preview?.rows||[]:changes;
   const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading&&(changes.length>0||archiveMissing);
   return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
-    <div className="notice"><Info size={18}/> Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</div>
+    <div className="notice"><Info size={18}/><span>Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</span></div>
     <div className="po-excel" style={{marginTop:16,marginBottom:16}}>
       <div className="po-excel-steps"><span><b>1</b> Download</span><i>→</i><span><b>2</b> Fill Excel</span><i>→</i><span><b>3</b> Upload & Preview</span><i>→</i><span><b>4</b> Confirm</span></div>
       <div className="po-excel-actions">

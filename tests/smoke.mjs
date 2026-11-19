@@ -64,6 +64,12 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await idOf("/categories","id",{name:"Packaging"});
     const pid = await idOf("/products", "id", { name: "Paper Box", sku: "BOX-001", category: "Packaging", emoji: "📦", sid: a, unit: "boxes",
       cost: 100, sell: 150, stock: 0, reorder: 5 });
+    await api("/products","POST",{name:"Paper Box",sku:"BOX-002",category:"Packaging",sid:a,unit:"boxes",cost:100,sell:150,stock:0,reorder:5},409);
+    await api("/products","POST",{name:"Missing Code",sku:"",category:"Packaging",sid:a,unit:"pieces",cost:1,sell:2,stock:0,reorder:1},400);
+    await api("/adjustments","POST",{pid,change:4,reason:"Prepare edit stock guard test"});
+    await api("/products/"+pid,"PUT",{name:"Paper Box",sku:"BOX-001",category:"Packaging",emoji:"📦",sid:a,unit:"boxes",cost:110,sell:165,stock:999,reorder:6,active:1});
+    assert.equal((await snapshot()).products.find(x=>x.id===pid).stock,4,"editing item details must not change stock");
+    await api("/adjustments","POST",{pid,change:-4,reason:"Restore test opening stock"});
     // Categories persist, reject case-insensitive duplicates, and cannot be archived while assigned.
     let categorySnapshot=await snapshot();
     const packaging=categorySnapshot.categories.find(x=>x.name==="Packaging");
@@ -355,7 +361,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     const editorCookie=editorLogin.response.headers.get("set-cookie")?.split(";")[0];
     await api("/adjustments","POST",{pid,change:1,reason:"Unauthorized"},403,editorCookie);
     await api("/quarantine","POST",{pid,mode:"hold",qty:1,reason:"Unauthorized"},403,editorCookie);
-    await api("/products","POST",{name:"Unauthorized stock",sid:a,category:"Packaging",unit:"pieces",cost:0,stock:1},403,editorCookie);
+    await api("/products","POST",{name:"Unauthorized stock",sku:"NO-STOCK-PERM",sid:a,category:"Packaging",unit:"pieces",cost:0,stock:1},403,editorCookie);
     const editorData=(await api("/all","GET",undefined,200,editorCookie)).data;
     assert.ok(editorData.dashboardCounts);
     assert.equal(editorData.movements.length,0);
