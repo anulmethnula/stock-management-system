@@ -76,6 +76,10 @@ test("Current Stock parser accepts a new product without ID and rejects invalid 
   assert.match(noSku.errors.join(" "),/unique Item Code/);
   const repeated=parseInventoryUpload(buildInventoryTemplate([item,{...item,name:"Duplicate"}]));
   assert.match(repeated.errors.join(" "),/Duplicate Item Code/);
+  const defaults=parseInventoryUpload(buildInventoryTemplate([{...item,sku:"DEFAULT-01",category:"",unit:""}]));
+  assert.deepEqual(defaults.errors,[]);
+  assert.equal(defaults.rows[0].category,"Other");
+  assert.equal(defaults.rows[0].unit,"pieces");
 });
 
 

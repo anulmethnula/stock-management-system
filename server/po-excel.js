@@ -310,7 +310,7 @@ export function buildInventoryTemplate(products=[]) {
     ["STEP 1","Download this template from Items → Bulk Upload."],
     ["STEP 2","Add new items or edit existing items. Keep the 11 columns and their order."],
     ["STEP 3","For existing items, keep Product ID and Item Code. New items MUST have a unique Item Code; leave Product ID blank."],
-    ["STEP 4","Type exact Supplier / Branch names already saved in StockEasy. New Categories are created from Excel."],
+    ["STEP 4","Type exact Supplier / Branch names already saved in StockEasy. Blank Category defaults to Other; blank Unit defaults to pieces."],
     ["STEP 5","Quantity is the FINAL PHYSICAL COUNT, NOT an amount to add."],
     ["STEP 6","Total Cost and Total Selling calculate automatically; do not enter these totals."],
     ["STEP 7","Upload → Preview changes, errors and stock differences → Confirm."],
@@ -399,14 +399,14 @@ export function parseInventoryUpload(buffer){
     if("ABCDEFGHI".split("").every(col=>String(v[col]??"").trim()===""))continue;
     try {
       const id=intVal(v.A,"Product ID",r.number,true);
-      const sku=String(v.B??"").trim(),name=String(v.C??"").trim(),category=String(v.D??"").trim();
-      const supplier=String(v.E??"").trim(),unit=String(v.F??"").trim();
+      const sku=String(v.B??"").trim(),name=String(v.C??"").trim(),category=String(v.D??"").trim()||"Other";
+      const supplier=String(v.E??"").trim(),unit=String(v.F??"").trim()||"pieces";
       if(!name||name.length>255)throw new Error("Row "+r.number+": Enter an Item Name.");
       if(sku.length>60)throw new Error("Row "+r.number+": Item Code is too long.");
       if(!id&&!sku)throw new Error("Row "+r.number+": New items require a unique Item Code.");
-      if(!category||category.length>40)throw new Error("Row "+r.number+": Enter a Category.");
+      if(category.length>40)throw new Error("Row "+r.number+": Category is too long.");
       if(!supplier||supplier.length>255)throw new Error("Row "+r.number+": Enter a Supplier / Branch.");
-      if(!unit||unit.length>40)throw new Error("Row "+r.number+": Enter a Unit.");
+      if(unit.length>40)throw new Error("Row "+r.number+": Unit is too long.");
       const qty=intVal(v.G,"Quantity",r.number);
       const cost=priceVal(v.H,"Unit Cost",r.number),sell=priceVal(v.I,"Selling Price",r.number);
       if(id){if(ids.has(id))throw new Error("Row "+r.number+": Duplicate Product ID "+id+".");ids.add(id);}
