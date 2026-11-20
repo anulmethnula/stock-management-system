@@ -324,13 +324,27 @@ app.put("/api/products/:id", requireEdit("products"), run(req => {
     .run(productId,...fields, b.active === 0 ? 0 : 1, id);
   // Stock is deliberately not editable here. Use adjustment for an auditable change.
 }));
-app.delete("/api/products/:id", requireEdit("products"), run(req => {
-  const id = find("products", req.params.id).id;
-  const used = db.prepare("SELECT 1 FROM po_items WHERE product_id=? UNION SELECT 1 FROM customer_order_items WHERE product_id=? UNION SELECT 1 FROM quotation_items WHERE product_id=? UNION SELECT 1 FROM stock_movements WHERE product_id=? LIMIT 1").get(id,id,id,id);
-  if (used) db.prepare("UPDATE products SET active=0 WHERE id=?").run(id);
-  else db.prepare("DELETE FROM products WHERE id=?").run(id);
-  return { archived: !!used };
-}));
+app.delete("/api/products/:id", requireEdit("products"), run(req => transaction(() => {
+  const product=find("products",req.params.id),id=product.id;
+  // Permanent erasure requested by the business: remove every product-linked
+  // line and audit row, then remove documents that no longer contain any item.
+  for(const table of ["supplier_return_lines","return_lines","delivery_lines","grn_lines","quotation_items","customer_order_items","po_items","stock_movements"])
+    db.prepare(`DELETE FROM ${table} WHERE product_id=?`).run(id);
+  db.prepare("DELETE FROM supplier_returns WHERE NOT EXISTS (SELECT 1 FROM supplier_return_lines l WHERE l.return_id=supplier_returns.id)").run();
+  db.prepare("DELETE FROM customer_returns WHERE NOT EXISTS (SELECT 1 FROM return_lines l WHERE l.return_id=customer_returns.id)").run();
+  db.prepare("DELETE FROM deliveries WHERE NOT EXISTS (SELECT 1 FROM delivery_lines l WHERE l.delivery_id=deliveries.id)").run();
+  db.prepare("DELETE FROM grns WHERE NOT EXISTS (SELECT 1 FROM grn_lines l WHERE l.grn_id=grns.id)").run();
+  db.prepare("DELETE FROM quotation_actions WHERE quotation_id IN (SELECT id FROM customer_quotations q WHERE NOT EXISTS (SELECT 1 FROM quotation_items l WHERE l.quotation_id=q.id))").run();
+  db.prepare("DELETE FROM customer_quotations WHERE NOT EXISTS (SELECT 1 FROM quotation_items l WHERE l.quotation_id=customer_quotations.id)").run();
+  db.prepare("UPDATE customer_quotations SET converted_order_id=NULL WHERE converted_order_id IN (SELECT id FROM customer_orders o WHERE NOT EXISTS (SELECT 1 FROM customer_order_items l WHERE l.order_id=o.id))").run();
+  db.prepare("DELETE FROM customer_orders WHERE NOT EXISTS (SELECT 1 FROM customer_order_items l WHERE l.order_id=customer_orders.id)").run();
+  db.prepare("DELETE FROM purchase_orders WHERE NOT EXISTS (SELECT 1 FROM po_items l WHERE l.po_id=purchase_orders.id) AND NOT EXISTS (SELECT 1 FROM grns g WHERE g.po_id=purchase_orders.id)").run();
+  // Remove pending/import audit payloads that still contain this internal row.
+  db.prepare("DELETE FROM inventory_import_previews WHERE EXISTS (SELECT 1 FROM json_each(plan_json,'$.items') WHERE json_extract(value,'$.id')=?) OR EXISTS (SELECT 1 FROM json_each(plan_json,'$.missing') WHERE json_extract(value,'$.id')=?)").run(id,id);
+  db.prepare("DELETE FROM inventory_import_batches WHERE EXISTS (SELECT 1 FROM json_each(details_json) WHERE json_extract(value,'$.id')=?)").run(id);
+  db.prepare("DELETE FROM products WHERE id=?").run(id);
+  return {deleted:true,productId:product.company_product_id||String(id)};
+})));
 
 app.post("/api/categories",requireEdit("products"),run(req=>{
   const name=required(req.body?.name,"category name",40);

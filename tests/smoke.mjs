@@ -458,7 +458,9 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       productId:"COMPANY-RESTORE-930",name:"Archived Restore Test",sku:"RESTORE-930",category:"Packaging",sid:a,
       unit:"pieces",cost:5,sell:8,stock:930
     });
-    await api("/products/"+restoreId,"DELETE");
+    const archiveSetupDb=new DatabaseSync(path.join(temp,"test.sqlite"));
+    archiveSetupDb.prepare("UPDATE products SET active=0 WHERE id=?").run(restoreId);
+    archiveSetupDb.close();
     assert.equal((await snapshot()).products.find(p=>p.id===restoreId).active,0);
     const restorePreview=await previewExcel(buildInventoryTemplate([{
       id:"COMPANY-RESTORE-930",sku:"RESTORE-930",name:"Archived Restore Test",category:"Packaging",
@@ -479,20 +481,24 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       name:"Obsolete Packaging",sku:"ARCH-009",category:"Packaging",sid:a,
       unit:"pieces",cost:1,sell:2,stock:0
     });
-    const beforeArchive=await snapshot();
+    await api("/products/"+archiveId,"DELETE");
+    const afterPermanentDelete=await snapshot();
+    assert.equal(afterPermanentDelete.products.some(p=>p.id===archiveId),false);
+    assert.equal(afterPermanentDelete.movements.some(m=>m.pid===archiveId),false);
+    const beforeArchive=afterPermanentDelete;
     const archiveFile=buildInventoryTemplate(beforeArchive.products.filter(p=>p.active&&p.id!==archiveId&&beforeArchive.branches.find(b=>b.id===p.sid)?.active).map(p=>({
       id:p.productId||p.id,sku:p.sku,name:p.name,category:p.category,
       supplierName:beforeArchive.branches.find(b=>b.id===p.sid).name,
       unit:p.unit,stock:p.stock,cost:p.cost,sell:p.sell
     })));
     const archivePreview=await previewExcel(archiveFile);
-    assert.equal(archivePreview.summary.archiveEligible,2);
+    assert.equal(archivePreview.summary.archiveEligible,1);
     assert.equal(archivePreview.canCommit,true);
     const archiveResult=(await api("/inventory-import/commit","POST",{
       token:archivePreview.token,confirm:true,archiveMissing:true
     })).data;
-    assert.equal(archiveResult.archived,2);
-    assert.equal((await snapshot()).products.find(p=>p.id===archiveId).active,0);
+    assert.equal(archiveResult.archived,1);
+    assert.equal((await snapshot()).products.some(p=>p.id===archiveId),false);
     assert.equal((await snapshot()).products.find(p=>p.id===bulkItem.id).active,1);
     // Order cancellation still keeps historical documents.
     await api("/customer-orders/" + co2n, "DELETE");

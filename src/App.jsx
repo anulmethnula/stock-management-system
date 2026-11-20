@@ -131,8 +131,8 @@ export default function App() {
     } catch (e) { setError(e.message); return false; }
     finally { setBusy(false); }
   };
-  const confirm = (title, text, path, method = "DELETE", go = null) =>
-    setModal({ type: "confirm", title, text, execute: () => action(path, method, undefined, "Updated successfully.", go) });
+  const confirm = (title, text, path, method = "DELETE", go = null, destructive = false) =>
+    setModal({ type: "confirm", title, text, destructive, execute: () => action(path, method, undefined, destructive?"Permanently deleted.":"Updated successfully.", go) });
   const reason = (title, sub, path, go) =>
     setModal({ type: "reason", title, sub, execute: r => action(path, "POST", { reason: r }, "Reversal saved in stock history.", go) });
   const signIn = async (username, password, remember = false) => {
@@ -356,7 +356,7 @@ function LegacyProducts({d,branch,setModal,confirm,canEdit,user,productFocus,set
           {!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low":"Out of stock"}</Pill>}
           <div className="po-actions">{canEdit&&<button className="icon-btn" title="Edit item" onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}
             {canEdit&&<button className="icon-btn primary-icon" title="Update stock count" onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}
-            {canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>
+            {canEdit&&p.active===1&&<button className="icon-btn danger" title="Delete item permanently" onClick={()=>confirm("Permanently delete item?","This permanently deletes the item from Inventory, documents, reports, imports and Stock History. This cannot be undone.","/products/"+p.id,"DELETE",null,true)}><Trash2 size={16}/></button>}</div>
         </div>)}</div>}
   </>;
 }
@@ -369,7 +369,7 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
   const totalPages=Math.max(1,Math.ceil(filtered.length/10)),currentPage=Math.min(page,totalPages),visible=filtered.slice((currentPage-1)*10,currentPage*10);
   useEffect(()=>setPage(1),[q,category,stockFilter]);
   useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target?.active){setQ(target.name);setCategory("all");setStockFilter("all");}setProductFocus(null);},[productFocus]);
-  const actions=p=><div className="inventory-actions"><button className="icon-btn" title="View all details" aria-label={`View ${p.name}`} onClick={()=>setModal({type:"view-product",record:p})}><Eye size={16}/></button>{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
+  const actions=p=><div className="inventory-actions"><button className="icon-btn" title="View all details" aria-label={`View ${p.name}`} onClick={()=>setModal({type:"view-product",record:p})}><Eye size={16}/></button>{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Delete item permanently" aria-label={`Permanently delete ${p.name}`} onClick={()=>confirm("Permanently delete item?","This permanently deletes the item from Inventory, documents, reports, imports and Stock History. This cannot be undone.","/products/"+p.id,"DELETE",null,true)}><Trash2 size={16}/></button>}</div>;
   const status=p=>!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low stock":"Out of stock"}</Pill>;
   return <div className="inventory-page">
     <div className="section-heading inventory-page-heading"><div><h1>Inventory items</h1><p className="sub">Manage current stock, item details and bulk Excel updates.</p></div>
@@ -680,8 +680,8 @@ function Staff({ staff,user,setModal,confirm,action }) {
 function Dialog({ modal, ctx, staff, close }) {
   const {d,branch,customer,product,action,busy,user,openProduct,refresh,setModal}=ctx;
   if(modal.type==="confirm") return <Modal title={modal.title} sub={modal.text} close={close}>
-    <div className="notice"><Info size={20}/> Historical records are kept for stock accuracy.</div>
-    <div className="form-actions"><button className="btn" disabled={busy} onClick={modal.execute}>Yes, continue</button>
+    <div className={modal.destructive?"error-banner":"notice"}>{modal.destructive?<AlertTriangle size={20}/>:<Info size={20}/>} {modal.destructive?"Permanent deletion removes all linked history and cannot be recovered.":"Historical records are kept for stock accuracy."}</div>
+    <div className="form-actions"><button className={modal.destructive?"btn danger":"btn"} disabled={busy} onClick={modal.execute}>{modal.destructive?"Delete permanently":"Yes, continue"}</button>
       <button className="btn ghost" onClick={close}>Keep it</button></div></Modal>;
   if(modal.type==="reason") return <ReasonDialog modal={modal} busy={busy} close={close}/>;
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
