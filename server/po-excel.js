@@ -275,21 +275,23 @@ export function parsePOUpload(buffer,products){
 }
 
 // Current Stock Migration: the same 11-column, bordered template is used for
-// first-time opening balances and later absolute stock counts / item updates.
+// first-time opening balances and later additive stock / item updates.
 // Only the Current Stock sheet is imported; calculated totals are not trusted.
 export const inventoryHeaders = [
   "Product ID","Item Code","Item Name","Category","Supplier / Branch","Unit",
-  "Quantity","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
+  "Stock Quantity to Add","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
 ];
 const excelCol=i=>String.fromCharCode(65+i);
-export function buildInventoryTemplate(products=[]) {
+export function buildInventoryTemplate(products=[],options={}) {
   if(products.length>1500) throw new Error("Too many items for one workbook; contact your administrator.");
   const nRows=Math.max(500,products.length)+1;
   const hdr="<row r=\"1\" ht=\"35\" customHeight=\"1\">"+inventoryHeaders.map((h,i)=>xmlCell(excelCol(i)+"1",h,1)).join("")+"</row>";
   const lines=[hdr];
   for(let j=2;j<=nRows;j++){
     const p=products[j-2];
-    const values=p?[p.id,p.sku||"",p.name,p.category,p.supplierName,p.unit,p.stock,p.cost,p.sell]:Array(9).fill("");
+    // Existing products start at zero so downloading and re-uploading a sheet
+    // cannot accidentally add their current stock again.
+    const values=p?[p.id,p.sku||"",p.name,p.category,p.supplierName,p.unit,options.zeroExistingQuantity?0:p.stock,p.cost,p.sell]:Array(9).fill("");
     let cells=values.map((v,i)=>xmlCell(excelCol(i)+j,v,[0,1,2,3,4,5].includes(i)?0:i===6?2:3)).join("");
     cells+='<c r="J'+j+'" s="4"><f>IF(OR(G'+j+'="",H'+j+'=""),"",G'+j+'*H'+j+')</f></c>';
     cells+='<c r="K'+j+'" s="4"><f>IF(OR(G'+j+'="",I'+j+'=""),"",G'+j+'*I'+j+')</f></c>';
@@ -311,12 +313,12 @@ export function buildInventoryTemplate(products=[]) {
     ["STEP 2","Add new items or edit existing items. Keep the 11 columns and their order."],
     ["STEP 3","For existing items, keep Product ID and Item Code. New items MUST have a unique Item Code; leave Product ID blank."],
     ["STEP 4","Type exact Supplier / Branch names already saved in StockEasy. Blank Category defaults to Other; blank Unit defaults to pieces."],
-    ["STEP 5","Quantity is the FINAL PHYSICAL COUNT, NOT an amount to add."],
+    ["STEP 5","For an existing item, Stock Quantity to Add INCREASES current stock. Enter 0 to update details without changing stock."],
     ["STEP 6","Total Cost and Total Selling calculate automatically; do not enter these totals."],
     ["STEP 7","Upload → Preview changes, errors and stock differences → Confirm."],
-    ["WARNING","If this is a new supplier delivery, use PO → GRN instead of bulk stock count."],
+    ["WARNING","For traceable supplier receiving, PO → GRN remains the recommended workflow."],
     ["IMPORTANT","Repeat uploads are blocked. Preview each change carefully; the system records a full audit history."],
-    ["EXAMPLE","Current stock 100, Excel quantity 120 → final stock 120 (not 220)."]
+    ["EXAMPLE","Current stock 100, Excel quantity 20 → final stock 120. Excel quantity 0 → stock stays 100."]
   ];
   const guideRows=guide.map((r,i)=>'<row r="'+(i+1)+'" ht="27" customHeight="1">'+xmlCell("A"+(i+1),r[0],i===0?1:0)+xmlCell("B"+(i+1),r[1],0)+'</row>');
   const guideSheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="1" width="25" customWidth="1"/><col min="2" max="2" width="115" customWidth="1"/></cols><sheetData>'+guideRows.join("")+'</sheetData></worksheet>';
@@ -379,9 +381,9 @@ export function parseInventoryUpload(buffer){
     rows.push({number:Number(m[1]),values});
   }
   const header=rows.find(r=>r.number===1)?.values||{};
-  if(inventoryHeaders.some((h,i)=>String(header[excelCol(i)]||"").trim()!==h))
+  if(inventoryHeaders.some((h,i)=>{const actual=String(header[excelCol(i)]||"").trim();return actual!==h&&!(i===6&&["Quantity","Final Physical Stock Count"].includes(actual));}))
     throw new Error("Wrong Excel columns or order. Download the Current Stock template from StockEasy.");
-  const selected=[],ids=new Set(),codes=new Set(),sameNames=new Set();
+  const selected=[],ids=new Set(),codes=new Set();
   const intVal=(value,label,row,optional=false)=>{
     const t=String(value??"").trim();if(optional&&t==="")return null;
     const n=Number(t);if(t===""||!Number.isSafeInteger(n)||n<(optional?1:0)||n>100000000)
@@ -398,7 +400,11 @@ export function parseInventoryUpload(buffer){
     const v=r.values;
     if("ABCDEFGHI".split("").every(col=>String(v[col]??"").trim()===""))continue;
     try {
-      const id=intVal(v.A,"Product ID",r.number,true);
+      // Product ID is an optional local reference. Blank, legacy, or text IDs
+      // do not reject a row; Item Code remains the stable import key.
+      const rawId=String(v.A??"").trim();
+      const parsedId=/^\d+$/.test(rawId)?Number(rawId):null;
+      const id=Number.isSafeInteger(parsedId)&&parsedId>0&&parsedId<=100000000?parsedId:null;
       const sku=String(v.B??"").trim(),name=String(v.C??"").trim(),category=String(v.D??"").trim()||"Other";
       const supplier=String(v.E??"").trim(),unit=String(v.F??"").trim()||"pieces";
       if(!name||name.length>255)throw new Error("Row "+r.number+": Enter an Item Name.");
@@ -411,9 +417,6 @@ export function parseInventoryUpload(buffer){
       const cost=priceVal(v.H,"Unit Cost",r.number),sell=priceVal(v.I,"Selling Price",r.number);
       if(id){if(ids.has(id))throw new Error("Row "+r.number+": Duplicate Product ID "+id+".");ids.add(id);}
       if(sku){if(codes.has(sku.toLowerCase()))throw new Error("Row "+r.number+": Duplicate Item Code "+sku+".");codes.add(sku.toLowerCase());}
-      const nameKey=name.toLowerCase()+"|"+supplier.toLowerCase();
-      if(sameNames.has(nameKey))throw new Error("Row "+r.number+": Duplicate Item Name for this supplier.");
-      sameNames.add(nameKey);
       selected.push({row:r.number,id,sku,name,category,supplier,unit,qty,cost,sell});
     }catch(e){errors.push(e.message);}
   }

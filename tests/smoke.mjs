@@ -112,6 +112,12 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(firstPreview.summary.newCount,1);
     assert.equal(firstPreview.summary.categoryCount,1);
     assert.equal((await snapshot()).products.some(x=>x.sku==="BULK-AC"),false);
+    const legacyIdPreview=await previewExcel(buildInventoryTemplate([{
+      id:987654,sku:"LEGACY-ID-01",name:"Legacy ID Product",category:"Air Conditioners",
+      supplierName:"Supun Central",unit:"pieces",stock:3,cost:10,sell:20
+    }]));
+    assert.equal(legacyIdPreview.errors.length,0);
+    assert.equal(legacyIdPreview.summary.newCount,1);
     const done=(await api("/inventory-import/commit","POST",{token:firstPreview.token,confirm:true})).data;
     assert.match(done.code,/^BULK-/);
     let bulkState=await snapshot();
@@ -120,22 +126,28 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.summary.newCount,0);
-    assert.equal(twice.summary.updateCount,0);
+    assert.equal(twice.summary.updateCount,1);
+    assert.equal(twice.canCommit,false);
+    assert.match(twice.errors.join(" "),/already been imported/);
     assert.ok(twice.summary.archiveEligible>=1);
-    await api("/inventory-import/commit","POST",{token:twice.token,confirm:true},400);
+    await api("/inventory-import/commit","POST",{token:twice.token,confirm:true},409);
     assert.equal((await snapshot()).products.find(x=>x.id===pid).active,1);
-    // A later physical recount may legitimately use the same target quantities
-    // after another transaction changed the real stock. Preview must show a delta.
+    // Existing-product quantities are additive and an exact repeat is blocked.
     await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
-    const recount=await previewExcel(inventoryFile);
-    assert.equal(recount.canCommit,true);
-    assert.equal(recount.summary.stockDelta,-2);
-    await api("/inventory-import/commit","POST",{token:recount.token,confirm:true});
-    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,12);
+    const additionFile=buildInventoryTemplate([{
+      id:bulkItem.id,sku:"BULK-AC",name:"CAMY Air Conditioner",category:"Air Conditioners",
+      supplierName:"Supun Central",unit:"pieces",stock:3,cost:900,sell:1200
+    }]);
+    const addition=await previewExcel(additionFile);
+    assert.equal(addition.canCommit,true);
+    assert.equal(addition.summary.stockDelta,3);
+    assert.equal(addition.rows[0].finalStock,17);
+    await api("/inventory-import/commit","POST",{token:addition.token,confirm:true});
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,17);
     await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
     const changedFile=buildInventoryTemplate([{
       id:bulkItem.id,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
-      supplierName:"Supun Central",unit:"pieces",stock:15,cost:800,sell:1250
+      supplierName:"Supun Central",unit:"pieces",stock:0,cost:800,sell:1250
     }]);
     const stale=await previewExcel(changedFile);
     await api("/adjustments","POST",{pid:bulkItem.id,change:1,reason:"Stock changed after preview"});
@@ -143,11 +155,11 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/adjustments","POST",{pid:bulkItem.id,change:-1,reason:"Restore original physical count"});
     const corrected=await previewExcel(changedFile);
     assert.equal(corrected.summary.updateCount,1);
-    assert.equal(corrected.summary.stockDelta,3);
+    assert.equal(corrected.summary.stockDelta,0);
     await api("/inventory-import/commit","POST",{token:corrected.token,confirm:true});
     bulkState=await snapshot();
     assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).name,"CAMY Updated AC");
-    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).stock,15);
+    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).stock,17);
     assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).cost,800);
     assert.equal(bulkState.categories.find(x=>x.name==="Appliances").active,1);
     assert.equal(bulkState.products.filter(x=>x.sku?.toLowerCase()==="bulk-ac").length,1);
@@ -160,15 +172,18 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       {id:"",sku:"BULK-AC",name:"CAMY Similar AC",category:"Appliances",
        supplierName:"Supun Central",unit:"pieces",stock:25,cost:800,sell:1250}
     ]));
-    assert.equal(aliases.canCommit,false);
+    assert.equal(aliases.canCommit,true);
+    assert.equal(aliases.summary.rejectedCount,1);
     assert.match(aliases.errors.join(" "),/same saved item/);
-    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,15);
-    const wrongSupplier=await previewExcel(buildInventoryTemplate([{
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,17);
+    const missingSupplier=await previewExcel(buildInventoryTemplate([{
       id:"",sku:"BAD-SUPPLIER",name:"Unknown Supplier Item",category:"Other",
       supplierName:"Not In System",unit:"pieces",stock:5,cost:10,sell:20
     }]));
-    assert.equal(wrongSupplier.canCommit,false);
-    assert.match(wrongSupplier.errors.join(" "),/must match one active supplier/);
+    assert.equal(missingSupplier.canCommit,true);
+    assert.equal(missingSupplier.errors.length,0);
+    assert.equal(missingSupplier.summary.supplierCount,1);
+    assert.deepEqual(missingSupplier.summary.suppliers,["Not In System"]);
 
     // Quote -> recorded customer approval -> exactly one CO, with prices preserved.
     const expiry=new Date();expiry.setDate(expiry.getDate()+14);

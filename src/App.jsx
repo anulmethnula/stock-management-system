@@ -336,17 +336,17 @@ function Directory({ d, type, setModal, confirm, canEdit }) {
 }
 
 function LegacyProducts({d,branch,setModal,confirm,canEdit,user,productFocus,setProductFocus}) {
-  const [q,setQ]=useState(""), [showArchived,setShowArchived]=useState(false), [category,setCategory]=useState("all"), [stockFilter,setStockFilter]=useState("all");
+  const [q,setQ]=useState(""), [category,setCategory]=useState("all"), [stockFilter,setStockFilter]=useState("all");
   const categories=(d.categories||[]).filter(c=>c.active).map(c=>c.name);
-  const filtered=d.products.filter(p => (showArchived||p.active) && (category==="all"||p.category===category) && (stockFilter==="all"||stockLevel(p)===stockFilter) && [p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
-  useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target){setQ(target.name);setCategory("all");setStockFilter("all");setShowArchived(!target.active);}setProductFocus(null);},[productFocus]);
+  const filtered=d.products.filter(p => p.active && (category==="all"||p.category===category) && (stockFilter==="all"||stockLevel(p)===stockFilter) && [p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
+  useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target?.active){setQ(target.name);setCategory("all");setStockFilter("all");}setProductFocus(null);},[productFocus]);
   return <>
     <SectionHeading title="Factory inventory" sub="Helmets, electrical components, safety equipment and manufacturing materials."
       action={canEdit?()=>setModal({type:"product"}):null} label="Add item"/>
     <div className="list-tools product-tools"><SearchBox value={q} change={setQ} placeholder="Search name, code, category or supplier…"/>
       <select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
       <select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
-      <label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label></div>
+      </div>
     <div className="result-count"><strong>{filtered.length}</strong> of {d.products.length} items shown{category!=="all"?` in ${category}`:""}</div>
     {!filtered.length?<Empty title="No matching items" sub="Add an item or change your search."/>:
       <div className="inventory-table-wrap"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>
@@ -362,14 +362,14 @@ function LegacyProducts({d,branch,setModal,confirm,canEdit,user,productFocus,set
 }
 
 function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProductFocus}) {
-  const [q,setQ]=useState(""),[showArchived,setShowArchived]=useState(false),[category,setCategory]=useState("all"),[stockFilter,setStockFilter]=useState("all"),[view,setView]=useState("table"),[page,setPage]=useState(1);
+  const [q,setQ]=useState(""),[category,setCategory]=useState("all"),[stockFilter,setStockFilter]=useState("all"),[view,setView]=useState("table"),[page,setPage]=useState(1);
   const categories=(d.categories||[]).filter(c=>c.active).map(c=>c.name);
   const current=active(d.products),counts={total:current.length,ok:current.filter(p=>stockLevel(p)==="ok").length,low:current.filter(p=>stockLevel(p)==="low").length,out:current.filter(p=>stockLevel(p)==="out").length};
-  const filtered=d.products.filter(p=>(showArchived||p.active)&&(category==="all"||p.category===category)&&(stockFilter==="all"||stockLevel(p)===stockFilter)&&[p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
+  const filtered=d.products.filter(p=>p.active&&(category==="all"||p.category===category)&&(stockFilter==="all"||stockLevel(p)===stockFilter)&&[p.name,p.sku,p.category,branch(p.sid).name].join(" ").toLowerCase().includes(q.toLowerCase()));
   const totalPages=Math.max(1,Math.ceil(filtered.length/10)),currentPage=Math.min(page,totalPages),visible=filtered.slice((currentPage-1)*10,currentPage*10);
-  useEffect(()=>setPage(1),[q,showArchived,category,stockFilter]);
-  useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target){setQ(target.name);setCategory("all");setStockFilter("all");setShowArchived(!target.active);}setProductFocus(null);},[productFocus]);
-  const actions=p=><div className="inventory-actions">{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
+  useEffect(()=>setPage(1),[q,category,stockFilter]);
+  useEffect(()=>{if(!productFocus)return;const target=one(d.products,productFocus);if(target?.active){setQ(target.name);setCategory("all");setStockFilter("all");}setProductFocus(null);},[productFocus]);
+  const actions=p=><div className="inventory-actions"><button className="icon-btn" title="View all details" aria-label={`View ${p.name}`} onClick={()=>setModal({type:"view-product",record:p})}><Eye size={16}/></button>{canEdit&&<button className="icon-btn" title="Edit item" aria-label={`Edit ${p.name}`} onClick={()=>setModal({type:"product",record:p})}><Pencil size={16}/></button>}{accessLevel(user,"stock_adjustments")==="edit"&&<button className="icon-btn primary-icon" title="Correct stock" aria-label={`Correct stock for ${p.name}`} onClick={()=>setModal({type:"adjust",record:p})}><RefreshCw size={16}/></button>}{canEdit&&p.active===1&&<button className="icon-btn danger" title="Remove item" aria-label={`Remove ${p.name}`} onClick={()=>confirm("Remove item?","This item will be hidden, but all stock history stays available.","/products/"+p.id)}><Trash2 size={16}/></button>}</div>;
   const status=p=>!p.active?<Pill kind="off">Removed</Pill>:<Pill kind={stockLevel(p)==="ok"?"good":stockLevel(p)==="low"?"warn":"off"}>{stockLevel(p)==="ok"?"In stock":stockLevel(p)==="low"?"Low stock":"Out of stock"}</Pill>;
   return <div className="inventory-page">
     <div className="section-heading inventory-page-heading"><div><h1>Inventory items</h1><p className="sub">Manage current stock, item details and bulk Excel updates.</p></div>
@@ -380,8 +380,8 @@ function Products({d,branch,setModal,confirm,canEdit,user,productFocus,setProduc
       </div>}
     </div>
     <div className="inventory-summary">{[[Package,"Total items",counts.total,"all","green"],[Check,"In stock",counts.ok,"ok","blue"],[AlertTriangle,"Low stock",counts.low,"low","amber"],[X,"Out of stock",counts.out,"out","red"]].map(([Icon,label,value,key,tone])=><button key={key} className={`inventory-summary-card ${tone} ${stockFilter===key?"on":""}`} onClick={()=>setStockFilter(key)}><span><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></button>)}</div>
-    <div className="inventory-tools"><SearchBox value={q} change={setQ} placeholder="Search item name, code, category or supplier..."/><select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select><select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><label className="toggle-archived"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show removed</label><div className="inventory-view-toggle" role="group" aria-label="Inventory view"><button className={view==="grid"?"on":""} onClick={()=>setView("grid")} title="Grid view"><Boxes size={17}/></button><button className={view==="table"?"on":""} onClick={()=>setView("table")} title="Table view"><ClipboardList size={17}/></button></div></div>
-    {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>{p.sku||"No item code"}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Available stock</b><strong>{p.stock}</strong>{p.damagedStock>0&&<small>{p.damagedStock} quarantined</small>}</span><span><b>Prices</b>{rs(p.cost)} / {rs(p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table"><div className="inventory-table-head inventory-table-row"><span>Item / Code</span><span>Category</span><span>Supplier</span><span>Stock count</span><span>Buy price</span><span>Sell price</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><div className="inventory-item"><Picture p={p}/><span><strong>{p.name}</strong><small>{p.sku||"No item code"}</small></span></div><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong></div><strong>{rs(p.cost)}</strong><strong>{rs(p.sell)}</strong>{status(p)}{actions(p)}</div>)}</div>}
+    <div className="inventory-tools"><SearchBox value={q} change={setQ} placeholder="Search item name, code, category or supplier..."/><select className="filter-select" aria-label="Filter by category" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select><select className="filter-select" aria-label="Filter by stock status" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}><option value="all">All stock levels</option><option value="ok">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><div className="inventory-view-toggle" role="group" aria-label="Inventory view"><button className={view==="grid"?"on":""} onClick={()=>setView("grid")} title="Grid view"><Boxes size={17}/></button><button className={view==="table"?"on":""} onClick={()=>setView("table")} title="Table view"><ClipboardList size={17}/></button></div></div>
+    {!filtered.length?<Empty title="No matching items" sub="Add an item or change your filters."/>:view==="grid"?<div className="inventory-card-grid">{visible.map(p=><article className="inventory-product-card" key={p.id}><div className="inventory-card-top"><Picture p={p}/>{status(p)}</div><h3>{p.name}</h3><small>Item Code: {p.sku||"Not set"} · Product ID: {p.id}</small><div className="inventory-card-meta"><span><b>Category</b>{p.category||"Other"}</span><span><b>Supplier</b>{branch(p.sid).name}</span><span><b>Unit</b>{p.unit||"pieces"}</span><span><b>Available stock</b><strong>{p.stock}</strong>{p.damagedStock>0&&<small>{p.damagedStock} quarantined</small>}</span><span><b>Unit prices</b>{rs(p.cost)} / {rs(p.sell)}</span><span><b>Stock values</b>{rs(p.stock*p.cost)} / {rs(p.stock*p.sell)}</span></div>{actions(p)}</article>)}</div>:<div className="inventory-table-wrap inventory-modern-table inventory-compact-table"><div className="inventory-table-head inventory-table-row"><span>Product ID</span><span>Item Code</span><span>Product Name</span><span>Category</span><span>Supplier</span><span>Quantity</span><span>Status</span><span>Actions</span></div>{visible.map(p=><div className="inventory-table-row" key={p.id}><strong className="inventory-product-id">{p.id}</strong><strong className="inventory-item-code">{p.sku||"Not set"}</strong><strong className="inventory-product-name">{p.name}</strong><span><span className="category-tag">{p.category||"Other"}</span></span><strong className="inventory-supplier">{branch(p.sid).name}</strong><div className="inventory-stock"><strong>{p.stock}</strong><small>{p.unit||"pieces"}</small></div>{status(p)}{actions(p)}</div>)}</div>}
     {!!filtered.length&&<div className="inventory-pagination"><span>Showing {(currentPage-1)*10+1}-{Math.min(currentPage*10,filtered.length)} of {filtered.length} items</span><div><button className="icon-btn" disabled={currentPage===1} title="Previous page" onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><strong>{currentPage}</strong><span>of {totalPages}</span><button className="icon-btn" disabled={currentPage===totalPages} title="Next page" onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>}
   </div>;
 }
@@ -686,6 +686,7 @@ function Dialog({ modal, ctx, staff, close }) {
   if(modal.type==="reason") return <ReasonDialog modal={modal} busy={busy} close={close}/>;
   if(modal.type==="branch"||modal.type==="customer") return <DirectoryForm modal={modal} close={close} busy={busy} action={action}/>;
   if(modal.type==="product") return <ProductForm modal={modal} close={close} busy={busy} action={action} d={d} refresh={refresh} user={user} openBulk={()=>setModal({type:"inventory-bulk"})}/>;
+  if(modal.type==="view-product") return <ProductDetails record={modal.record} branch={branch} close={close}/>;
   if(modal.type==="inventory-bulk") return <InventoryBulkForm d={d} close={close} action={action} busy={busy}/>;
   if(modal.type==="categories") return <CategoryManager d={d} close={close} refresh={refresh}/>;
   if(modal.type==="po") return <DocumentForm modal={modal} close={close} busy={busy} action={action} d={d} kind="po"/>;
@@ -752,6 +753,21 @@ function DirectoryForm({modal,close,busy,action}) {
       {record&&<label className="checkline"><input type="checkbox" checked={f.active===1} onChange={e=>set("active",e.target.checked?1:0)}/> Active (available in new orders)</label>}
       <Controls busy={busy} close={close} label={record?"Update details":"Add "+(isBranch?"supplier":"company")} valid={f.name.trim().length>0}/>
     </form>
+  </Modal>;
+}
+function ProductDetails({record:p,branch,close}) {
+  const details=[
+    ["Product ID",p.id],["Item Code",p.sku||"Not set"],["Item Name",p.name],
+    ["Category",p.category||"Other"],["Supplier / Branch",branch(p.sid).name],
+    ["Unit",p.unit||"pieces"],["Quantity",p.stock],["Quarantined",p.damagedStock||0],
+    ["Unit Cost",rs(p.cost)],["Selling Price",rs(p.sell)],
+    ["Total Cost",rs(p.stock*p.cost)],["Total Selling",rs(p.stock*p.sell)],
+    ["Low-stock Warning",p.reorder],["Status",p.active?"Active":"Removed"]
+  ];
+  return <Modal wide title="Item details" sub="Complete product, pricing and stock information." close={close}>
+    <div className="product-detail-head"><Picture p={p}/><div><h3>{p.name}</h3><p>Product ID: <strong>{p.id}</strong> · Item Code: <strong>{p.sku||"Not set"}</strong></p></div></div>
+    <div className="product-detail-grid">{details.map(([label,value])=><div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>
+    <div className="form-actions"><button type="button" className="btn ghost" onClick={close}>Close</button></div>
   </Modal>;
 }
 function ProductForm({modal,close,busy,action,d,refresh,user,openBulk}) {
@@ -1057,8 +1073,8 @@ function InventoryBulkForm({d,close,action,busy}) {
   const changes=preview?.rows?.filter(x=>x.action!=="unchanged")||[];
   const reviewRows=showUnchanged?preview?.rows||[]:changes;
   const canSave=preview?.canCommit&&confirmed&&!busy&&!uploading&&(changes.length>0||archiveMissing);
-  return <Modal wide title="Bulk Upload Items & Current Stock" sub="One Excel template for first-time migration and future item/stock updates." close={close}>
-    <div className="notice"><Info size={18}/><span>Excel Quantity is the <strong>final stock count</strong>, not an amount to add. For new supplier goods, use PO → GRN instead.</span></div>
+  return <Modal wide title="Bulk Upload Items & Add Stock" sub="One Excel template for new items, product updates and additive stock entries." close={close}>
+    <div className="notice"><Info size={18}/><span>Excel <strong>Stock Quantity to Add</strong> increases the current stock. Enter <strong>0</strong> to update product details without changing stock. For normal supplier receiving, use <strong>PO → GRN</strong>.</span></div>
     <div className="po-excel" style={{marginTop:16,marginBottom:16}}>
       <div className="po-excel-steps"><span><b>1</b> Download</span><i>→</i><span><b>2</b> Fill Excel</span><i>→</i><span><b>3</b> Upload & Preview</span><i>→</i><span><b>4</b> Confirm</span></div>
       <div className="po-excel-actions">
@@ -1067,24 +1083,24 @@ function InventoryBulkForm({d,close,action,busy}) {
           <input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={uploading||busy} onChange={upload}/>
         </label>
       </div>
-      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code; leave their Product ID blank. Use the exact saved supplier name. New categories are created from your sheet. Existing items missing from Excel are kept by default. A separate option can archive eligible missing items only if you upload your COMPLETE product list.</p>
+      <p className="po-excel-help">The template includes current active items, existing Product IDs and quantities. New items must use a unique Item Code. Legacy Product IDs are accepted as references. Missing suppliers and categories are created automatically from your sheet. Existing items missing from Excel are kept by default.</p>
       {fileName&&<small>Selected: <strong>{fileName}</strong></small>}
     </div>
     {error&&<div className="error-banner" role="alert"><AlertTriangle size={17}/><span>{error}</span></div>}
     {preview&&<>
       <div className="inventory-summary" style={{gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",marginBottom:12}}>
-        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["New categories",preview.summary.categoryCount],["Missing from Excel",preview.summary.missingCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
+        {[[ "New items",preview.summary.newCount ],["Items updated",preview.summary.updateCount],["No change",preview.summary.unchangedCount],["Rows not added",preview.summary.rejectedCount||0],["New categories",preview.summary.categoryCount],["New suppliers",preview.summary.supplierCount||0],["Missing from Excel",preview.summary.missingCount]].map(([label,count])=><div className="inventory-summary-card green" key={label}><div><strong>{count}</strong><small>{label}</small></div></div>)}
       </div>
       {!!preview.summary.categories.length&&<div className="notice"><Info size={16}/><span>New categories from Excel: <strong>{preview.summary.categories.join(", ")}</strong></span></div>}
-      {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>Fix these problems and upload again:</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}</div>}
-      <p className="mute" style={{margin:"12px 0"}}><strong>Review every change before saving.</strong> Current Stock → Excel Final Stock. No PO or GRN will be created. {preview.summary.unchangedCount>0&&<button type="button" className="text-button" onClick={()=>setShowUnchanged(v=>!v)}>{showUnchanged?"Hide":"Show"} {preview.summary.unchangedCount} unchanged item(s)</button>}</p>
+      {!!preview.errors.length&&<div className="error-banner" style={{display:"block",marginTop:12}} role="alert"><strong>{preview.canCommit?"These rows will NOT be added. Valid rows can still be imported:":"No rows can be imported until these problems are corrected:"}</strong><ul>{preview.errors.slice(0,40).map((x,i)=><li key={i}>{x}</li>)}</ul>{preview.errors.length>40&&<p>...and {preview.errors.length-40} more errors</p>}{preview.canCommit&&<p><strong>For the next upload, include only these corrected rejected rows.</strong> Do not upload the already imported rows again.</p>}</div>}
+      <p className="mute" style={{margin:"12px 0"}}><strong>Review every change before saving.</strong> Current Stock + Quantity to Add = Final Stock. No PO or GRN will be created. {preview.summary.unchangedCount>0&&<button type="button" className="text-button" onClick={()=>setShowUnchanged(v=>!v)}>{showUnchanged?"Hide":"Show"} {preview.summary.unchangedCount} unchanged item(s)</button>}</p>
       <div className="report-table-wrap" style={{maxHeight:330,overflow:"auto",border:"1px solid #dce6df",borderRadius:10}}>
-        <table><thead><tr>{["Excel Row","Action","Item / Code","Category","Supplier","Current","Final","Difference","Cost","Selling"].map(x=><th key={x}>{x}</th>)}</tr></thead>
+        <table><thead><tr>{["Excel Row","Action","Item / Code","Category","Supplier","Current Stock","Quantity to Add","Stock Increase","Final Stock","Cost","Selling"].map(x=><th key={x}>{x}</th>)}</tr></thead>
           <tbody>{reviewRows.map(x=><tr key={x.row}>
             <td>{x.row}</td><td><strong>{x.action==="new"?"Create":x.action==="update"?"Update":"Unchanged"}</strong></td>
             <td><strong>{x.name}</strong>{x.oldName&&x.oldName!==x.name&&<small style={{display:"block"}}>Was: {x.oldName}</small>}<small style={{display:"block"}}>{x.sku||"—"}</small></td><td>{x.category}{x.oldCategory&&x.oldCategory!==x.category&&<small style={{display:"block"}}>Was: {x.oldCategory}</small>}</td><td>{x.supplier}</td>
             <td>{x.oldStock===null?"New":x.oldStock}</td><td><strong>{x.qty}</strong></td>
-            <td>{x.delta>0?"+":""}{x.delta}</td><td>{rs(x.cost)}{x.oldCost!==null&&x.oldCost!==x.cost&&<small style={{display:"block"}}>Was: {rs(x.oldCost)}</small>}</td><td>{rs(x.sell)}{x.oldSell!==null&&x.oldSell!==x.sell&&<small style={{display:"block"}}>Was: {rs(x.oldSell)}</small>}</td>
+            <td>{x.delta>0?"+":""}{x.delta}</td><td><strong>{x.finalStock}</strong></td><td>{rs(x.cost)}{x.oldCost!==null&&x.oldCost!==x.cost&&<small style={{display:"block"}}>Was: {rs(x.oldCost)}</small>}</td><td>{rs(x.sell)}{x.oldSell!==null&&x.oldSell!==x.sell&&<small style={{display:"block"}}>Was: {rs(x.oldSell)}</small>}</td>
           </tr>)}</tbody>
         </table>
       </div>
@@ -1098,10 +1114,10 @@ function InventoryBulkForm({d,close,action,busy}) {
           Archive the {preview.summary.archiveEligible} eligible missing items. Only select this if the Excel is your COMPLETE item list; otherwise leave unchecked.
         </label>}
       </div>}
-      <p className="mute" style={{marginTop:10}}>Net stock adjustment: <strong>{preview.summary.stockDelta>0?"+":""}{preview.summary.stockDelta}</strong> units across all items.</p>
+      <p className="mute" style={{marginTop:10}}>Total stock increase: <strong>+{preview.summary.stockDelta}</strong> units across all items.</p>
       <label className="checkline" style={{marginTop:14}}>
         <input type="checkbox" checked={confirmed} disabled={!preview.canCommit} onChange={e=>setConfirmed(e.target.checked)}/>
-        I checked the Excel. These are final physical quantities and I approve updating the inventory.
+        I checked the Excel. Valid rows will be imported, listed rejected rows will be skipped, and zero quantities leave stock unchanged.
       </label>
     </>}
     <div className="form-actions">

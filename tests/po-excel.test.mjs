@@ -59,7 +59,7 @@ test("Current Stock Excel retains the 11 requested columns, 500 rows, and formul
   }]);
   assert.deepEqual(inventoryHeaders,[
     "Product ID","Item Code","Item Name","Category","Supplier / Branch","Unit",
-    "Quantity","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
+    "Stock Quantity to Add","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
   ]);
 });
 
@@ -70,12 +70,20 @@ test("Current Stock parser accepts a new product without ID and rejects invalid 
   assert.equal(parsed.errors.length,0);
   assert.equal(parsed.rows[0].id,null);
   assert.equal(parsed.rows[0].qty,0);
+  const legacyTextId=parseInventoryUpload(buildInventoryTemplate([{...item,id:"I0094",sku:"LEGACY-TEXT-ID"}]));
+  assert.deepEqual(legacyTextId.errors,[]);
+  assert.equal(legacyTextId.rows[0].id,null);
   const bad=parseInventoryUpload(buildInventoryTemplate([{...item,stock:-1}]));
   assert.match(bad.errors.join(" "),/Quantity must be/);
   const noSku=parseInventoryUpload(buildInventoryTemplate([{...item,sku:""}]));
   assert.match(noSku.errors.join(" "),/unique Item Code/);
   const repeated=parseInventoryUpload(buildInventoryTemplate([item,{...item,name:"Duplicate"}]));
   assert.match(repeated.errors.join(" "),/Duplicate Item Code/);
+  const sameName=parseInventoryUpload(buildInventoryTemplate([
+    {...item,sku:"SAME-NAME-1"},{...item,sku:"SAME-NAME-2"}
+  ]));
+  assert.deepEqual(sameName.errors,[]);
+  assert.equal(sameName.rows.length,2);
   const defaults=parseInventoryUpload(buildInventoryTemplate([{...item,sku:"DEFAULT-01",category:"",unit:""}]));
   assert.deepEqual(defaults.errors,[]);
   assert.equal(defaults.rows[0].category,"Other");
