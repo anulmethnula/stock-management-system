@@ -1022,10 +1022,11 @@ function MovementForm({title,type,doc,d,close,busy,action}) {
           <span className={shortage?"dispatch-stock-short":""}><strong>{l.p?.stock||0}</strong>{shortage>0&&<small>{shortage} short</small>}</span>
           <div>{l.max>0?<Qty value={number(q[l.pid])} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">No stock</Pill>}</div>
         </div>})}</div></>:
-      <div className="form-item-list">{options.map(l=><div className="form-item" key={l.pid}>
-        <Picture p={l.p}/><div className="grow"><strong>{l.p?.name}</strong>
-          <small>{isReturn?"Can be returned":"Still requested"}: {l.remaining} · {l.p?.stock} currently in stock</small>{isReturn&&l.max>0&&<select aria-label={"Returned condition for "+l.p?.name} value={conditions[l.pid]||"quarantine"} onChange={e=>setConditions(v=>({...v,[l.pid]:e.target.value}))}><option value="quarantine">Quarantine — damaged / uninspected</option><option value="sellable">Inspected — sellable</option></select>}</div>
-        {l.max>0?<Qty value={number(q[l.pid])} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">0 available</Pill>}
+      <div className="form-item-list return-item-list">{options.map(l=><div className="return-item-row" key={l.pid}>
+        <Picture p={l.p}/><div className="return-item-info"><strong>{l.p?.name}</strong>
+          <small>Can be returned: {l.remaining} · {l.p?.stock} currently in stock</small><small>Product ID: {l.p?.productId||l.p?.id} · Item Code: {l.p?.sku||"No code"}</small></div>
+        {l.max>0?<label className="return-condition"><span>Return condition</span><select aria-label={"Returned condition for "+l.p?.name} value={conditions[l.pid]||"quarantine"} onChange={e=>setConditions(v=>({...v,[l.pid]:e.target.value}))}><option value="quarantine">Quarantine — damaged / uninspected</option><option value="sellable">Inspected — sellable</option></select></label>:<span/>}
+        <div className="return-quantity"><span>Return quantity</span>{l.max>0?<Qty value={number(q[l.pid])} max={l.max} onChange={v=>setQ(o=>({...o,[l.pid]:v}))}/>:<Pill kind="off">0 available</Pill>}</div>
       </div>)}</div>}
       {(isGRN||isDispatch)&&<div className="order-total"><span>{lines.length} item{lines.length===1?"":"s"} selected</span><strong>{selectedTotal} {isGRN?"to receive":"units to dispatch"}</strong></div>}
       {!isReturn&&<><label>{isGRN?"Received by":"Sent by"}</label><input value={by} onChange={e=>setBy(e.target.value)} placeholder="Your name (optional — login name is used if empty)"/></>}
