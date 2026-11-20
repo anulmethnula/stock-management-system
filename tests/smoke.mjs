@@ -92,7 +92,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/categories/"+categoryId,"PUT",{name:"Factory Consumables",active:1});
     // One reusable Items bulk template: create, change final count, block double import.
     const inventoryFile=buildInventoryTemplate([{
-      id:"",sku:"BULK-AC",name:"CAMY Test AC",category:"Air Conditioners",
+      id:"10095",sku:"BULK-AC",name:"CAMY Test AC",category:"Air Conditioners",
       supplierName:"Supun Central",unit:"pieces",stock:12,cost:900,sell:1200
     }]);
     const inventoryDownload=await fetch(root+"/inventory-template.xlsx",{headers:{Cookie:cookie}});
@@ -122,20 +122,20 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.match(done.code,/^BULK-/);
     let bulkState=await snapshot();
     const bulkItem=bulkState.products.find(x=>x.sku==="BULK-AC");
+    assert.equal(bulkItem.productId,"10095");
     assert.equal(bulkItem.stock,12);
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.summary.newCount,0);
     assert.equal(twice.summary.updateCount,1);
-    assert.equal(twice.canCommit,false);
-    assert.match(twice.errors.join(" "),/already been imported/);
+    assert.equal(twice.canCommit,true);
+    assert.equal(twice.errors.length,0);
     assert.ok(twice.summary.archiveEligible>=1);
-    await api("/inventory-import/commit","POST",{token:twice.token,confirm:true},409);
     assert.equal((await snapshot()).products.find(x=>x.id===pid).active,1);
     // Existing-product quantities are additive and an exact repeat is blocked.
     await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
     const additionFile=buildInventoryTemplate([{
-      id:bulkItem.id,sku:"BULK-AC",name:"CAMY Air Conditioner",category:"Air Conditioners",
+      id:bulkItem.productId,sku:"BULK-AC",name:"CAMY Air Conditioner",category:"Air Conditioners",
       supplierName:"Supun Central",unit:"pieces",stock:3,cost:900,sell:1200
     }]);
     const addition=await previewExcel(additionFile);
@@ -146,7 +146,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,17);
     await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
     const changedFile=buildInventoryTemplate([{
-      id:bulkItem.id,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
+      id:bulkItem.productId,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
       supplierName:"Supun Central",unit:"pieces",stock:0,cost:800,sell:1250
     }]);
     const stale=await previewExcel(changedFile);
@@ -167,7 +167,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     // Two rows that point to one existing product under different keys MUST
     // not apply two separate quantity changes.
     const aliases=await previewExcel(buildInventoryTemplate([
-      {id:bulkItem.id,sku:"",name:"CAMY Updated AC",category:"Appliances",
+      {id:bulkItem.productId,sku:"",name:"CAMY Updated AC",category:"Appliances",
        supplierName:"Supun Central",unit:"pieces",stock:16,cost:800,sell:1250},
       {id:"",sku:"BULK-AC",name:"CAMY Similar AC",category:"Appliances",
        supplierName:"Supun Central",unit:"pieces",stock:25,cost:800,sell:1250}

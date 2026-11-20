@@ -317,7 +317,7 @@ export function buildInventoryTemplate(products=[],options={}) {
     ["STEP 6","Total Cost and Total Selling calculate automatically; do not enter these totals."],
     ["STEP 7","Upload → Preview changes, errors and stock differences → Confirm."],
     ["WARNING","For traceable supplier receiving, PO → GRN remains the recommended workflow."],
-    ["IMPORTANT","Repeat uploads are blocked. Preview each change carefully; the system records a full audit history."],
+    ["IMPORTANT","The same sheet may be uploaded again to add the quantities again. Preview carefully; every confirmation is recorded in stock history."],
     ["EXAMPLE","Current stock 100, Excel quantity 20 → final stock 120. Excel quantity 0 → stock stays 100."]
   ];
   const guideRows=guide.map((r,i)=>'<row r="'+(i+1)+'" ht="27" customHeight="1">'+xmlCell("A"+(i+1),r[0],i===0?1:0)+xmlCell("B"+(i+1),r[1],0)+'</row>');
@@ -400,11 +400,11 @@ export function parseInventoryUpload(buffer){
     const v=r.values;
     if("ABCDEFGHI".split("").every(col=>String(v[col]??"").trim()===""))continue;
     try {
-      // Product ID is an optional local reference. Blank, legacy, or text IDs
-      // do not reject a row; Item Code remains the stable import key.
+      // Product ID is the company's permanent identifier. Preserve its exact
+      // text instead of replacing it with StockEasy's internal database ID.
       const rawId=String(v.A??"").trim();
-      const parsedId=/^\d+$/.test(rawId)?Number(rawId):null;
-      const id=Number.isSafeInteger(parsedId)&&parsedId>0&&parsedId<=100000000?parsedId:null;
+      if(rawId.length>60)throw new Error("Row "+r.number+": Product ID is too long.");
+      const id=rawId||null;
       const sku=String(v.B??"").trim(),name=String(v.C??"").trim(),category=String(v.D??"").trim()||"Other";
       const supplier=String(v.E??"").trim(),unit=String(v.F??"").trim()||"pieces";
       if(!name||name.length>255)throw new Error("Row "+r.number+": Enter an Item Name.");

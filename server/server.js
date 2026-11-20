@@ -145,7 +145,7 @@ app.get("/api/all", run(req => {
   return {
     user: publicUser(req.user),
     branches: canSee("suppliers","products","purchase_orders","goods_received","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,location,notes,supplier_type,active FROM suppliers ORDER BY active DESC,name").all() : [],
-    products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","stock_adjustments","reports") ? db.prepare("SELECT id,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,damaged_stock damagedStock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
+    products: canSee("products","purchase_orders","goods_received","customer_orders","quotations","deliveries","stock_history","stock_adjustments","reports") ? db.prepare("SELECT id,company_product_id productId,name,sku,category,emoji,image img,supplier_id sid,unit,cost,sale_price sell,stock,damaged_stock damagedStock,reorder,active FROM products ORDER BY active DESC,name").all() : [],
     categories: canSee("products","reports") ? db.prepare("SELECT id,name,active FROM product_categories ORDER BY active DESC,name COLLATE NOCASE").all() : [],
     customers: canSee("customers","customer_orders","quotations","deliveries","reports") ? db.prepare("SELECT id,name,contact,phone,phone2,address,notes,customer_type,active FROM customers ORDER BY active DESC,name").all() : [],
     pos: canSee("purchase_orders","goods_received","reports") ? db.prepare("SELECT id n,code id,supplier_id sid,date,status FROM purchase_orders ORDER BY n DESC").all()
@@ -305,6 +305,7 @@ app.post("/api/products", requireEdit("products"), run(req => transaction(() => 
   check(!opening||cleanPermissions(req.user.permissions,req.user.role).stock_adjustments==="edit","Opening stock requires stock correction permission.",403);
   const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
+  db.prepare("UPDATE products SET company_product_id=CAST(id AS TEXT) WHERE id=?").run(info.lastInsertRowid);
   logStock(info.lastInsertRowid, opening, "Opening balance", "NEW ITEM", "Initial quantity", req.user.username);
   return { id: info.lastInsertRowid };
 })));

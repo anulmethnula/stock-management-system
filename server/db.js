@@ -55,10 +55,14 @@ addColumn("customers", "phone2", "TEXT DEFAULT ''");
 addColumn("customers", "notes", "TEXT DEFAULT ''");
 addColumn("customers", "customer_type", "TEXT NOT NULL DEFAULT 'external'");
 addColumn("products", "sku", "TEXT");
+addColumn("products", "company_product_id", "TEXT");
 addColumn("products", "category", "TEXT NOT NULL DEFAULT 'Other'");
 addColumn("products", "sale_price", "REAL NOT NULL DEFAULT 0");
 addColumn("products", "active", "INTEGER NOT NULL DEFAULT 1");
 addColumn("products", "damaged_stock", "INTEGER NOT NULL DEFAULT 0 CHECK(damaged_stock >= 0)");
+// Preserve company-issued Product IDs separately from SQLite relationship IDs.
+db.exec("UPDATE products SET company_product_id=CAST(id AS TEXT) WHERE TRIM(COALESCE(company_product_id,''))=''");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_company_product_id ON products(company_product_id COLLATE NOCASE) WHERE TRIM(COALESCE(company_product_id,''))<>''");
 addColumn("return_lines", "condition", "TEXT NOT NULL DEFAULT 'sellable' CHECK(condition IN ('sellable','quarantine'))");
 addColumn("stock_movements", "damaged_change", "INTEGER NOT NULL DEFAULT 0");
 addColumn("grns", "status", "TEXT NOT NULL DEFAULT 'Active'");

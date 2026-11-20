@@ -9,13 +9,13 @@ export function registerInventoryImportRoutes(app,h){
   const normalize=value=>String(value??"").trim().toLocaleLowerCase("en");
   const moneyEqual=(a,b)=>Math.abs(Number(a)-Number(b))<0.005;
   const snapshot=p=>p?{
-    id:p.id,name:p.name,sku:p.sku||"",category:p.category,
+    id:p.id,companyProductId:p.company_product_id||String(p.id),name:p.name,sku:p.sku||"",category:p.category,
     sid:p.supplier_id,unit:p.unit,stock:p.stock,cost:p.cost,
     sell:p.sale_price,active:p.active
   }:null;
   const readProduct=id=>db.prepare("SELECT * FROM products WHERE id=?").get(id);
   const toPreview=p=>({
-    row:p.row,action:p.action,id:p.id||null,sku:p.sku,name:p.name,category:p.category,
+    row:p.row,action:p.action,id:p.id||null,productId:p.companyProductId||null,sku:p.sku,name:p.name,category:p.category,
     supplier:p.supplier,unit:p.unit,qty:p.qty,oldStock:p.previous?.stock??null,
     oldName:p.previous?.name??null,oldCategory:p.previous?.category??null,
     oldCost:p.previous?.cost??null,oldSell:p.previous?.sell??null,
@@ -33,14 +33,14 @@ export function registerInventoryImportRoutes(app,h){
   };
   const authorize=requireEdit("products"),authorizeStock=requireEdit("stock_adjustments");
   app.get("/api/inventory-template",authorize,run(req=>{
-    const list=db.prepare("SELECT p.id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
+    const list=db.prepare("SELECT COALESCE(NULLIF(p.company_product_id,''),CAST(p.id AS TEXT)) id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
     // JSON is used here to let the existing run wrapper handle auth errors.
     // The binary route below sends the workbook directly.
     return { count:list.length,download:"/api/inventory-template.xlsx" };
   }));
   app.get("/api/inventory-template.xlsx",authorize,(req,res)=>{
     try{
-      const list=db.prepare("SELECT p.id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
+      const list=db.prepare("SELECT COALESCE(NULLIF(p.company_product_id,''),CAST(p.id AS TEXT)) id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
       const workbook=buildInventoryTemplate(list,{zeroExistingQuantity:true});
       res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition",'attachment; filename="StockEasy_Current_Stock_Migration_Bordered.xlsx"');
@@ -56,7 +56,7 @@ export function registerInventoryImportRoutes(app,h){
       try{({rows,errors}=parseInventoryUpload(req.body));}
       catch(e){e.status=422;throw e;}
       const products=db.prepare("SELECT * FROM products").all(),suppliers=db.prepare("SELECT * FROM suppliers").all(),categories=db.prepare("SELECT * FROM product_categories").all();
-      const byId=new Map(products.map(p=>[p.id,p]));
+      const byCompanyId=new Map(products.map(p=>[normalize(p.company_product_id||p.id),p]));
       const bySku=new Map();
       for(const p of products)if(p.sku){
         const key=normalize(p.sku);
@@ -70,11 +70,16 @@ export function registerInventoryImportRoutes(app,h){
         if(!supplierMatch||supplierMatch.active!==1)newSuppliers.add(row.supplier);
         // Product IDs from legacy systems are only references. If an ID is not
         // known in StockEasy, match by Item Code or create a new local product.
-        const matchById=row.id?byId.get(row.id):null;
+        const uploadedProductId=String(row.id??"").trim();
+        const matchById=uploadedProductId?byCompanyId.get(normalize(uploadedProductId)):null;
         const skuMatches=row.sku?bySku.get(normalize(row.sku))||[]:[];
         if(skuMatches.length>1){errors.push("Row "+row.row+": Existing Item Code '"+row.sku+"' is duplicated in StockEasy. Resolve it first.");continue;}
         if(matchById&&skuMatches.length&&skuMatches[0].id!==matchById.id){errors.push("Row "+row.row+": Product ID and Item Code belong to different products.");continue;}
         const p=matchById||skuMatches[0]||null;
+        if(p&&uploadedProductId&&normalize(p.company_product_id||p.id)!==normalize(uploadedProductId)&&String(p.company_product_id||p.id)!==String(p.id)){
+          errors.push("Row "+row.row+": Product ID '"+uploadedProductId+"' does not match this Item Code's saved company Product ID '"+p.company_product_id+"'.");
+          continue;
+        }
         // Different Excel rows can still refer to the SAME saved product via
         // Product ID on one row and Item Code on another. Never apply both.
         if(p&&seenProducts.has(p.id)){
@@ -87,22 +92,21 @@ export function registerInventoryImportRoutes(app,h){
         canonicalCategories.set(normalize(row.category),categoryName);
         if(!cat)newCategories.add(categoryName);
         const previous=snapshot(p);
-        const changed=!previous||p.name!==row.name||(p.sku||"")!==row.sku||p.category!==categoryName||
+        const companyProductId=uploadedProductId||previous?.companyProductId||"";
+        const changed=!previous||previous.companyProductId!==companyProductId||p.name!==row.name||(p.sku||"")!==row.sku||p.category!==categoryName||
           p.supplier_id!==supplierMatch?.id||p.unit!==row.unit||row.qty>0||
           !moneyEqual(p.cost,row.cost)||!moneyEqual(p.sale_price,row.sell)||p.active!==1;
         const action=!p?"new":changed?"update":"unchanged";
-        plan.push({...row,category:categoryName,id:p?.id||null,previous,sid:supplierMatch?.id||null,action});
+        plan.push({...row,companyProductId,category:categoryName,id:p?.id||null,previous,sid:supplierMatch?.id||null,action});
       }
       const missing=products.filter(p=>p.active===1&&!seenProducts.has(p.id)).map(p=>{
         const reason=archiveReason(p);
         return {id:p.id,name:p.name,sku:p.sku||"",stock:p.stock,damagedStock:p.damaged_stock,eligible:!reason,reason,previous:snapshot(p)};
       });
-      // Fingerprint uploaded values (not current stock) so an identical additive
-      // sheet can never increase inventory twice.
+      // Fingerprint the source values for the audit record. Each confirmation
+      // receives a unique batch fingerprint, so intentional repeats are allowed.
       const fingerprint=crypto.createHash("sha256")
         .update(JSON.stringify({mode:"additive-stock-v1",rows})).digest("hex");
-      const duplicate=db.prepare("SELECT id FROM inventory_import_batches WHERE fingerprint=?").get(fingerprint);
-      if(duplicate)errors.push("This exact inventory data has already been imported (batch #"+duplicate.id+"). Download a fresh template for another update.");
       const summary={
         rows:rows.length,newCount:plan.filter(x=>x.action==="new").length,
         updateCount:plan.filter(x=>x.action==="update").length,
@@ -114,7 +118,7 @@ export function registerInventoryImportRoutes(app,h){
       let token=null;
       // Row errors do not discard valid rows. Staff can import the valid rows,
       // then upload only the corrected rejected rows in a later sheet.
-      if(!duplicate&&summary.newCount+summary.updateCount+summary.archiveEligible>0){
+      if(summary.newCount+summary.updateCount+summary.archiveEligible>0){
         token=crypto.randomBytes(24).toString("hex");
         db.prepare("DELETE FROM inventory_import_previews WHERE expires_at<?").run(Date.now());
         db.prepare("INSERT INTO inventory_import_previews(token,staff_id,fingerprint,plan_json,expires_at) VALUES(?,?,?,?,?)")
@@ -129,8 +133,6 @@ export function registerInventoryImportRoutes(app,h){
     check(/^[a-f0-9]{48}$/.test(token),"Your upload preview has expired. Upload again.",409);
     const preview=db.prepare("SELECT * FROM inventory_import_previews WHERE token=? AND staff_id=?").get(token,req.user.id);
     check(preview&&preview.expires_at>Date.now(),"Upload preview has expired. Upload the file again.",409);
-    check(!db.prepare("SELECT 1 FROM inventory_import_batches WHERE fingerprint=?").get(preview.fingerprint),
-      "This Excel data has already been imported. Upload a new file.",409);
     const {items:plan,missing=[]}=JSON.parse(preview.plan_json);
     const archiveMissing=req.body?.archiveMissing===true;
     check(plan.length>0||archiveMissing&&missing.length>0,"No items to import.");
@@ -159,6 +161,8 @@ export function registerInventoryImportRoutes(app,h){
       }else{
         check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE").get(item.sku),
           "Item Code "+item.sku+" now exists. Upload again.",409);
+        check(!item.companyProductId||!db.prepare("SELECT 1 FROM products WHERE company_product_id=? COLLATE NOCASE").get(item.companyProductId),
+          "Product ID "+item.companyProductId+" now exists. Upload again.",409);
       }
     }
     if(archiveMissing){
@@ -173,8 +177,11 @@ export function registerInventoryImportRoutes(app,h){
     const created=changed.filter(p=>p.action==="new").length,updated=changed.length-created;
     const delta=changed.reduce((n,p)=>n+p.qty,0);
     const archived=archiveMissing?missing.filter(x=>x.eligible):[];
+    // Identical files are valid repeated additive receipts. Keep each confirmed
+    // preview unique for auditing while deletion of its token prevents double-submit.
+    const batchFingerprint=crypto.createHash("sha256").update(preview.fingerprint+":"+token).digest("hex");
     const batchId=db.prepare("INSERT INTO inventory_import_batches(fingerprint,staff_id,new_count,updated_count,stock_delta,details_json) VALUES(?,?,?,?,?,?)")
-      .run(preview.fingerprint,req.user.id,created,updated,delta,JSON.stringify([...changed.map(p=>({...toPreview(p),before:p.previous})),...archived.map(p=>({id:p.id,name:p.name,action:"archive",before:p.previous}))])).lastInsertRowid;
+      .run(batchFingerprint,req.user.id,created,updated,delta,JSON.stringify([...changed.map(p=>({...toPreview(p),before:p.previous})),...archived.map(p=>({id:p.id,name:p.name,action:"archive",before:p.previous}))])).lastInsertRowid;
     const reference="BULK-"+String(batchId).padStart(4,"0");
     const ensureCategory=db.prepare("SELECT id,name,active FROM product_categories WHERE name=? COLLATE NOCASE");
     for(const item of changed){
@@ -184,8 +191,10 @@ export function registerInventoryImportRoutes(app,h){
       if(item.action==="new"){
         const p=db.prepare("INSERT INTO products(name,sku,category,emoji,supplier_id,unit,cost,sale_price,stock,reorder) VALUES(?,?,?,'📦',?,?,?,?,?,5)")
           .run(item.name,item.sku,item.category,item.sid,item.unit,item.cost,item.sell,item.qty).lastInsertRowid;
+        db.prepare("UPDATE products SET company_product_id=? WHERE id=?").run(item.companyProductId||String(p),p);
         logStock(p,item.qty,"Opening balance",reference,"Initial stock imported from reviewed Excel",req.user.username);
       }else{
+        db.prepare("UPDATE products SET company_product_id=? WHERE id=?").run(item.companyProductId||String(item.id),item.id);
         db.prepare("UPDATE products SET name=?,sku=?,category=?,supplier_id=?,unit=?,cost=?,sale_price=?,active=1 WHERE id=?")
           .run(item.name,item.sku||null,item.category,item.sid,item.unit,item.cost,item.sell,item.id);
         if(item.qty){changeStock(item.id,item.qty);logStock(item.id,item.qty,"Bulk stock addition",reference,

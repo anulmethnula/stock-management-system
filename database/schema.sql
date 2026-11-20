@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_product_id TEXT,
   name TEXT NOT NULL,
   sku TEXT,
   category TEXT NOT NULL DEFAULT 'Other',

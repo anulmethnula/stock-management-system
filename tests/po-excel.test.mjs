@@ -54,7 +54,7 @@ test("Current Stock Excel retains the 11 requested columns, 500 rows, and formul
   const parsed=parseInventoryUpload(workbook);
   assert.deepEqual(parsed.errors,[]);
   assert.deepEqual(parsed.rows,[{
-    row:2,id:13,sku:"BOX-13",name:"CAMY Box",category:"Packaging",
+    row:2,id:"13",sku:"BOX-13",name:"CAMY Box",category:"Packaging",
     supplier:"Supun Central",unit:"pieces",qty:25,cost:75,sell:150
   }]);
   assert.deepEqual(inventoryHeaders,[
@@ -72,7 +72,7 @@ test("Current Stock parser accepts a new product without ID and rejects invalid 
   assert.equal(parsed.rows[0].qty,0);
   const legacyTextId=parseInventoryUpload(buildInventoryTemplate([{...item,id:"I0094",sku:"LEGACY-TEXT-ID"}]));
   assert.deepEqual(legacyTextId.errors,[]);
-  assert.equal(legacyTextId.rows[0].id,null);
+  assert.equal(legacyTextId.rows[0].id,"I0094");
   const bad=parseInventoryUpload(buildInventoryTemplate([{...item,stock:-1}]));
   assert.match(bad.errors.join(" "),/Quantity must be/);
   const noSku=parseInventoryUpload(buildInventoryTemplate([{...item,sku:""}]));
