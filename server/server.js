@@ -297,7 +297,9 @@ function productFields(b) {
     money(b.cost, "Buying price"), money(b.sell ?? 0, "Selling price"), amount(b.reorder ?? 5, "Low-stock warning")];
 }
 app.post("/api/products", requireEdit("products"), run(req => transaction(() => {
-  const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock");
+  const b = req.body || {}, fields = productFields(b), opening = amount(b.stock ?? 0, "Opening stock"), productId=str(b.productId,60);
+  check(!productId||!db.prepare("SELECT 1 FROM products WHERE company_product_id=? COLLATE NOCASE LIMIT 1").get(productId),
+    "Product ID already exists. Edit the existing item instead.",409);
   check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE LIMIT 1").get(fields[1]),
     "Item Code already exists. Edit the existing item instead.",409);
   check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=? LIMIT 1").get(fields[0],fields[5]),
@@ -305,19 +307,21 @@ app.post("/api/products", requireEdit("products"), run(req => transaction(() => 
   check(!opening||cleanPermissions(req.user.permissions,req.user.role).stock_adjustments==="edit","Opening stock requires stock correction permission.",403);
   const info = db.prepare("INSERT INTO products(name,sku,category,emoji,image,supplier_id,unit,cost,sale_price,reorder,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .run(...fields, opening);
-  db.prepare("UPDATE products SET company_product_id=CAST(id AS TEXT) WHERE id=?").run(info.lastInsertRowid);
+  db.prepare("UPDATE products SET company_product_id=? WHERE id=?").run(productId||String(info.lastInsertRowid),info.lastInsertRowid);
   logStock(info.lastInsertRowid, opening, "Opening balance", "NEW ITEM", "Initial quantity", req.user.username);
   return { id: info.lastInsertRowid };
 })));
 app.put("/api/products/:id", requireEdit("products"), run(req => {
   const id = find("products", req.params.id).id, b = req.body || {};
-  const fields = productFields(b);
+  const fields = productFields(b),productId=str(b.productId,60)||String(id);
+  check(!db.prepare("SELECT 1 FROM products WHERE company_product_id=? COLLATE NOCASE AND id<>? LIMIT 1").get(productId,id),
+    "Product ID already belongs to another product.",409);
   check(!db.prepare("SELECT 1 FROM products WHERE sku=? COLLATE NOCASE AND id<>? LIMIT 1").get(fields[1],id),
     "Item Code already belongs to another product.",409);
   check(!db.prepare("SELECT 1 FROM products WHERE name=? COLLATE NOCASE AND supplier_id=? AND id<>? LIMIT 1").get(fields[0],fields[5],id),
     "This product already exists for the selected supplier.",409);
-  db.prepare("UPDATE products SET name=?,sku=?,category=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
-    .run(...fields, b.active === 0 ? 0 : 1, id);
+  db.prepare("UPDATE products SET company_product_id=?,name=?,sku=?,category=?,emoji=?,image=?,supplier_id=?,unit=?,cost=?,sale_price=?,reorder=?,active=? WHERE id=?")
+    .run(productId,...fields, b.active === 0 ? 0 : 1, id);
   // Stock is deliberately not editable here. Use adjustment for an auditable change.
 }));
 app.delete("/api/products/:id", requireEdit("products"), run(req => {

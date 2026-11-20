@@ -275,11 +275,11 @@ export function parsePOUpload(buffer,products){
 }
 
 // Current Stock Migration: the same 11-column, bordered template is used for
-// first-time opening balances and later additive stock / item updates.
+// first-time opening balances and later final physical stock corrections.
 // Only the Current Stock sheet is imported; calculated totals are not trusted.
 export const inventoryHeaders = [
   "Product ID","Item Code","Item Name","Category","Supplier / Branch","Unit",
-  "Stock Quantity to Add","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
+  "Final Physical Stock Count","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
 ];
 const excelCol=i=>String.fromCharCode(65+i);
 export function buildInventoryTemplate(products=[],options={}) {
@@ -311,14 +311,14 @@ export function buildInventoryTemplate(products=[],options={}) {
     ["STOCKEASY — CURRENT STOCK BULK UPLOAD",""],
     ["STEP 1","Download this template from Items → Bulk Upload."],
     ["STEP 2","Add new items or edit existing items. Keep the 11 columns and their order."],
-    ["STEP 3","For existing items, keep Product ID and Item Code. New items MUST have a unique Item Code; leave Product ID blank."],
+    ["STEP 3","Every item row MUST have its company Product ID and a unique Item Code. Rows missing either value are skipped and shown in red."],
     ["STEP 4","Type exact Supplier / Branch names already saved in StockEasy. Blank Category defaults to Other; blank Unit defaults to pieces."],
-    ["STEP 5","For an existing item, Stock Quantity to Add INCREASES current stock. Enter 0 to update details without changing stock."],
+    ["STEP 5","Final Physical Stock Count REPLACES the saved count. Example: saved 930, Excel 10, final stock 10."],
     ["STEP 6","Total Cost and Total Selling calculate automatically; do not enter these totals."],
     ["STEP 7","Upload → Preview changes, errors and stock differences → Confirm."],
     ["WARNING","For traceable supplier receiving, PO → GRN remains the recommended workflow."],
-    ["IMPORTANT","The same sheet may be uploaded again to add the quantities again. Preview carefully; every confirmation is recorded in stock history."],
-    ["EXAMPLE","Current stock 100, Excel quantity 20 → final stock 120. Excel quantity 0 → stock stays 100."]
+    ["IMPORTANT","Existing and archived products are matched by company Product ID or Item Code. Corrections are recorded in stock history."],
+    ["EXAMPLE","Current stock 100, Excel quantity 20 → final stock 20 and a -80 correction is recorded."]
   ];
   const guideRows=guide.map((r,i)=>'<row r="'+(i+1)+'" ht="27" customHeight="1">'+xmlCell("A"+(i+1),r[0],i===0?1:0)+xmlCell("B"+(i+1),r[1],0)+'</row>');
   const guideSheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="1" width="25" customWidth="1"/><col min="2" max="2" width="115" customWidth="1"/></cols><sheetData>'+guideRows.join("")+'</sheetData></worksheet>';
@@ -407,9 +407,10 @@ export function parseInventoryUpload(buffer){
       const id=rawId||null;
       const sku=String(v.B??"").trim(),name=String(v.C??"").trim(),category=String(v.D??"").trim()||"Other";
       const supplier=String(v.E??"").trim(),unit=String(v.F??"").trim()||"pieces";
+      if(!id)throw new Error("Row "+r.number+": Product ID is required. This row was not added.");
       if(!name||name.length>255)throw new Error("Row "+r.number+": Enter an Item Name.");
       if(sku.length>60)throw new Error("Row "+r.number+": Item Code is too long.");
-      if(!id&&!sku)throw new Error("Row "+r.number+": New items require a unique Item Code.");
+      if(!sku)throw new Error("Row "+r.number+": Item Code is required. This row was not added.");
       if(category.length>40)throw new Error("Row "+r.number+": Category is too long.");
       if(!supplier||supplier.length>255)throw new Error("Row "+r.number+": Enter a Supplier / Branch.");
       if(unit.length>40)throw new Error("Row "+r.number+": Unit is too long.");

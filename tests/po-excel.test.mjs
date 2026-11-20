@@ -59,28 +59,31 @@ test("Current Stock Excel retains the 11 requested columns, 500 rows, and formul
   }]);
   assert.deepEqual(inventoryHeaders,[
     "Product ID","Item Code","Item Name","Category","Supplier / Branch","Unit",
-    "Stock Quantity to Add","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
+    "Final Physical Stock Count","Unit Cost (Rs)","Selling Price (Rs)","Total Cost (Rs)","Total Selling (Rs)"
   ]);
 });
 
-test("Current Stock parser accepts a new product without ID and rejects invalid stock",()=>{
-  const item={id:"",sku:"NEW-01",name:"New product",category:"New category",
+test("Current Stock parser requires company Product ID and rejects invalid stock",()=>{
+  const item={id:"NEW-PID-01",sku:"NEW-01",name:"New product",category:"New category",
     supplierName:"Supun Central",unit:"sets",stock:0,cost:10,sell:20};
   const parsed=parseInventoryUpload(buildInventoryTemplate([item]));
   assert.equal(parsed.errors.length,0);
-  assert.equal(parsed.rows[0].id,null);
+  assert.equal(parsed.rows[0].id,"NEW-PID-01");
   assert.equal(parsed.rows[0].qty,0);
+  const missingId=parseInventoryUpload(buildInventoryTemplate([{...item,id:"",sku:"NO-PRODUCT-ID"}]));
+  assert.match(missingId.errors.join(" "),/Product ID is required/);
+  assert.equal(missingId.rows.length,0);
   const legacyTextId=parseInventoryUpload(buildInventoryTemplate([{...item,id:"I0094",sku:"LEGACY-TEXT-ID"}]));
   assert.deepEqual(legacyTextId.errors,[]);
   assert.equal(legacyTextId.rows[0].id,"I0094");
   const bad=parseInventoryUpload(buildInventoryTemplate([{...item,stock:-1}]));
   assert.match(bad.errors.join(" "),/Quantity must be/);
   const noSku=parseInventoryUpload(buildInventoryTemplate([{...item,sku:""}]));
-  assert.match(noSku.errors.join(" "),/unique Item Code/);
-  const repeated=parseInventoryUpload(buildInventoryTemplate([item,{...item,name:"Duplicate"}]));
+  assert.match(noSku.errors.join(" "),/Item Code is required/);
+  const repeated=parseInventoryUpload(buildInventoryTemplate([item,{...item,id:"NEW-PID-02",name:"Duplicate"}]));
   assert.match(repeated.errors.join(" "),/Duplicate Item Code/);
   const sameName=parseInventoryUpload(buildInventoryTemplate([
-    {...item,sku:"SAME-NAME-1"},{...item,sku:"SAME-NAME-2"}
+    {...item,id:"SAME-PID-1",sku:"SAME-NAME-1"},{...item,id:"SAME-PID-2",sku:"SAME-NAME-2"}
   ]));
   assert.deepEqual(sameName.errors,[]);
   assert.equal(sameName.rows.length,2);

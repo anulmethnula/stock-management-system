@@ -127,12 +127,12 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.summary.newCount,0);
-    assert.equal(twice.summary.updateCount,1);
+    assert.equal(twice.summary.updateCount,0);
     assert.equal(twice.canCommit,true);
     assert.equal(twice.errors.length,0);
     assert.ok(twice.summary.archiveEligible>=1);
     assert.equal((await snapshot()).products.find(x=>x.id===pid).active,1);
-    // Existing-product quantities are additive and an exact repeat is blocked.
+    // Existing-product quantities are final physical counts.
     await api("/adjustments","POST",{pid:bulkItem.id,change:2,reason:"Later stock movement"});
     const additionFile=buildInventoryTemplate([{
       id:bulkItem.productId,sku:"BULK-AC",name:"CAMY Air Conditioner",category:"Air Conditioners",
@@ -140,14 +140,14 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     }]);
     const addition=await previewExcel(additionFile);
     assert.equal(addition.canCommit,true);
-    assert.equal(addition.summary.stockDelta,3);
-    assert.equal(addition.rows[0].finalStock,17);
+    assert.equal(addition.summary.stockDelta,-11);
+    assert.equal(addition.rows[0].finalStock,3);
     await api("/inventory-import/commit","POST",{token:addition.token,confirm:true});
-    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,17);
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,3);
     await api("/products","POST",{name:"Duplicate SKU",sku:"bulk-ac",category:"Packaging",sid:a,unit:"pieces",cost:1,stock:0},409);
     const changedFile=buildInventoryTemplate([{
       id:bulkItem.productId,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
-      supplierName:"Supun Central",unit:"pieces",stock:0,cost:800,sell:1250
+      supplierName:"Supun Central",unit:"pieces",stock:3,cost:800,sell:1250
     }]);
     const stale=await previewExcel(changedFile);
     await api("/adjustments","POST",{pid:bulkItem.id,change:1,reason:"Stock changed after preview"});
@@ -159,7 +159,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     await api("/inventory-import/commit","POST",{token:corrected.token,confirm:true});
     bulkState=await snapshot();
     assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).name,"CAMY Updated AC");
-    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).stock,17);
+    assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).stock,3);
     assert.equal(bulkState.products.find(x=>x.id===bulkItem.id).cost,800);
     assert.equal(bulkState.categories.find(x=>x.name==="Appliances").active,1);
     assert.equal(bulkState.products.filter(x=>x.sku?.toLowerCase()==="bulk-ac").length,1);
@@ -167,17 +167,17 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     // Two rows that point to one existing product under different keys MUST
     // not apply two separate quantity changes.
     const aliases=await previewExcel(buildInventoryTemplate([
-      {id:bulkItem.productId,sku:"",name:"CAMY Updated AC",category:"Appliances",
+      {id:bulkItem.productId,sku:"BULK-AC",name:"CAMY Updated AC",category:"Appliances",
        supplierName:"Supun Central",unit:"pieces",stock:16,cost:800,sell:1250},
       {id:"",sku:"BULK-AC",name:"CAMY Similar AC",category:"Appliances",
        supplierName:"Supun Central",unit:"pieces",stock:25,cost:800,sell:1250}
     ]));
     assert.equal(aliases.canCommit,true);
     assert.equal(aliases.summary.rejectedCount,1);
-    assert.match(aliases.errors.join(" "),/same saved item/);
-    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,17);
+    assert.match(aliases.errors.join(" "),/Product ID is required/);
+    assert.equal((await snapshot()).products.find(x=>x.id===bulkItem.id).stock,3);
     const missingSupplier=await previewExcel(buildInventoryTemplate([{
-      id:"",sku:"BAD-SUPPLIER",name:"Unknown Supplier Item",category:"Other",
+      id:"BAD-SUPPLIER-PID",sku:"BAD-SUPPLIER",name:"Unknown Supplier Item",category:"Other",
       supplierName:"Not In System",unit:"pieces",stock:5,cost:10,sell:20
     }]));
     assert.equal(missingSupplier.canCommit,true);
@@ -452,6 +452,27 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
       assert.equal(generalExcel.status,200);
       assert.equal(Buffer.from(await generalExcel.arrayBuffer()).readUInt32LE(0),0x04034b50);
     } finally {auditDb.close();}
+    // Re-uploading an archived item restores the SAME row and sets the exact
+    // final count, preserving the previous 930-unit history with a -920 entry.
+    const restoreId=await idOf("/products","id",{
+      productId:"COMPANY-RESTORE-930",name:"Archived Restore Test",sku:"RESTORE-930",category:"Packaging",sid:a,
+      unit:"pieces",cost:5,sell:8,stock:930
+    });
+    await api("/products/"+restoreId,"DELETE");
+    assert.equal((await snapshot()).products.find(p=>p.id===restoreId).active,0);
+    const restorePreview=await previewExcel(buildInventoryTemplate([{
+      id:"COMPANY-RESTORE-930",sku:"RESTORE-930",name:"Archived Restore Test",category:"Packaging",
+      supplierName:"Supun Central",unit:"pieces",stock:10,cost:5,sell:8
+    }]));
+    assert.equal(restorePreview.summary.newCount,0);
+    assert.equal(restorePreview.summary.updateCount,1);
+    assert.equal(restorePreview.summary.stockDelta,-920);
+    const restoreResult=(await api("/inventory-import/commit","POST",{token:restorePreview.token,confirm:true})).data;
+    const restoredState=await snapshot(),restored=restoredState.products.find(p=>p.id===restoreId);
+    assert.equal(restored.active,1);
+    assert.equal(restored.stock,10);
+    assert.equal(restoredState.products.filter(p=>p.sku==="RESTORE-930").length,1);
+    assert.ok(restoredState.movements.some(m=>m.pid===restoreId&&m.reference===restoreResult.code&&m.qty===-920));
     // Missing products can be archived only after explicit approval and only
     // when stock, quarantine and outstanding documents are all clear.
     const archiveId=await idOf("/products","id",{
@@ -460,7 +481,7 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     });
     const beforeArchive=await snapshot();
     const archiveFile=buildInventoryTemplate(beforeArchive.products.filter(p=>p.active&&p.id!==archiveId&&beforeArchive.branches.find(b=>b.id===p.sid)?.active).map(p=>({
-      id:p.id,sku:p.sku,name:p.name,category:p.category,
+      id:p.productId||p.id,sku:p.sku,name:p.name,category:p.category,
       supplierName:beforeArchive.branches.find(b=>b.id===p.sid).name,
       unit:p.unit,stock:p.stock,cost:p.cost,sell:p.sell
     })));

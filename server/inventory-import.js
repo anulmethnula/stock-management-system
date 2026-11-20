@@ -1,6 +1,6 @@
 // Inventory bulk upload is deliberately separate from purchase receiving.
-// Existing-product quantities are additive. Zero updates details only; PO → GRN
-// remains the normal traceable workflow for receiving supplier goods.
+// Excel quantity is an authoritative final physical count. Existing and archived
+// products are corrected in place; PO → GRN remains the receiving workflow.
 import crypto from "node:crypto";
 import { buildInventoryTemplate, parseInventoryUpload } from "./po-excel.js";
 
@@ -19,7 +19,7 @@ export function registerInventoryImportRoutes(app,h){
     supplier:p.supplier,unit:p.unit,qty:p.qty,oldStock:p.previous?.stock??null,
     oldName:p.previous?.name??null,oldCategory:p.previous?.category??null,
     oldCost:p.previous?.cost??null,oldSell:p.previous?.sell??null,
-    delta:p.qty,finalStock:(p.previous?.stock||0)+p.qty,cost:p.cost,sell:p.sell
+    delta:p.qty-(p.previous?.stock||0),finalStock:p.qty,cost:p.cost,sell:p.sell
   });
   const archiveReason=p=>{
     if(p.stock>0||p.damaged_stock>0)return "Stock must be zero (including quarantined stock)";
@@ -41,7 +41,7 @@ export function registerInventoryImportRoutes(app,h){
   app.get("/api/inventory-template.xlsx",authorize,(req,res)=>{
     try{
       const list=db.prepare("SELECT COALESCE(NULLIF(p.company_product_id,''),CAST(p.id AS TEXT)) id,p.sku,p.name,p.category,s.name supplierName,p.unit,p.stock,p.cost,p.sale_price sell FROM products p JOIN suppliers s ON s.id=p.supplier_id WHERE p.active=1 ORDER BY p.name COLLATE NOCASE,p.id").all();
-      const workbook=buildInventoryTemplate(list,{zeroExistingQuantity:true});
+      const workbook=buildInventoryTemplate(list);
       res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition",'attachment; filename="StockEasy_Current_Stock_Migration_Bordered.xlsx"');
       res.setHeader("Cache-Control","no-store");
@@ -94,7 +94,7 @@ export function registerInventoryImportRoutes(app,h){
         const previous=snapshot(p);
         const companyProductId=uploadedProductId||previous?.companyProductId||"";
         const changed=!previous||previous.companyProductId!==companyProductId||p.name!==row.name||(p.sku||"")!==row.sku||p.category!==categoryName||
-          p.supplier_id!==supplierMatch?.id||p.unit!==row.unit||row.qty>0||
+          p.supplier_id!==supplierMatch?.id||p.unit!==row.unit||p.stock!==row.qty||
           !moneyEqual(p.cost,row.cost)||!moneyEqual(p.sale_price,row.sell)||p.active!==1;
         const action=!p?"new":changed?"update":"unchanged";
         plan.push({...row,companyProductId,category:categoryName,id:p?.id||null,previous,sid:supplierMatch?.id||null,action});
@@ -113,7 +113,7 @@ export function registerInventoryImportRoutes(app,h){
         unchangedCount:plan.filter(x=>x.action==="unchanged").length,
         categoryCount:newCategories.size,categories:[...newCategories],supplierCount:newSuppliers.size,suppliers:[...newSuppliers],
         missingCount:missing.length,archiveEligible:missing.filter(x=>x.eligible).length,archiveBlocked:missing.filter(x=>!x.eligible).length,
-        rejectedCount:errors.length,totalQty:plan.reduce((n,x)=>n+x.qty,0),stockDelta:plan.reduce((n,x)=>n+x.qty,0)
+        rejectedCount:errors.length,totalQty:plan.reduce((n,x)=>n+x.qty,0),stockDelta:plan.reduce((n,x)=>n+x.qty-(x.previous?.stock||0),0)
       };
       let token=null;
       // Row errors do not discard valid rows. Staff can import the valid rows,
@@ -175,7 +175,7 @@ export function registerInventoryImportRoutes(app,h){
     }
     const changed=plan.filter(p=>p.action!=="unchanged");
     const created=changed.filter(p=>p.action==="new").length,updated=changed.length-created;
-    const delta=changed.reduce((n,p)=>n+p.qty,0);
+    const delta=changed.reduce((n,p)=>n+p.qty-(p.previous?.stock||0),0);
     const archived=archiveMissing?missing.filter(x=>x.eligible):[];
     // Identical files are valid repeated additive receipts. Keep each confirmed
     // preview unique for auditing while deletion of its token prevents double-submit.
@@ -194,11 +194,12 @@ export function registerInventoryImportRoutes(app,h){
         db.prepare("UPDATE products SET company_product_id=? WHERE id=?").run(item.companyProductId||String(p),p);
         logStock(p,item.qty,"Opening balance",reference,"Initial stock imported from reviewed Excel",req.user.username);
       }else{
+        const difference=item.qty-item.previous.stock;
         db.prepare("UPDATE products SET company_product_id=? WHERE id=?").run(item.companyProductId||String(item.id),item.id);
         db.prepare("UPDATE products SET name=?,sku=?,category=?,supplier_id=?,unit=?,cost=?,sale_price=?,active=1 WHERE id=?")
           .run(item.name,item.sku||null,item.category,item.sid,item.unit,item.cost,item.sell,item.id);
-        if(item.qty){changeStock(item.id,item.qty);logStock(item.id,item.qty,"Bulk stock addition",reference,
-          "Added "+item.qty+" units from reviewed Excel; previous stock "+item.previous.stock,req.user.username);}
+        if(difference){changeStock(item.id,difference);logStock(item.id,difference,"Bulk stock correction",reference,
+          "Final physical count "+item.qty+"; previous stock "+item.previous.stock,req.user.username);}
       }
     }
     for(const item of archived){
