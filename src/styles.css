@@ -285,7 +285,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .po-detail-row:last-child{border-bottom:0}.po-detail-head{background:var(--soft);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}.po-detail-row span>strong,.po-detail-row span>small{display:block}.po-detail-row span>small{color:var(--muted);margin-top:3px}
 .product-link{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--fg);text-align:left;line-height:1.4;cursor:pointer}
 .product-link strong,.product-link small{display:block}.product-link small{margin-top:3px;color:var(--muted);font-size:9px}.product-link:hover strong,.product-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}.product-link.simple{font-size:12px}
-.movement-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.movement-table-wrap{overflow-x:auto;scrollbar-width:none;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--shadow)}
+.movement-table-wrap::-webkit-scrollbar{display:none}
 .movement-table-row{display:grid;grid-template-columns:120px minmax(170px,1.1fr) 130px minmax(190px,1.2fr) minmax(150px,1fr) 105px 210px;gap:14px;align-items:center;min-width:1150px;padding:14px 16px;border-bottom:1px solid var(--line);transition:background .2s}
 .movement-table-row:last-child{border-bottom:0}.movement-table-row:not(.movement-table-head):hover{background:color-mix(in srgb,var(--soft) 58%,transparent)}
 .movement-table-row>.state-pill{width:100%;height:28px;justify-content:center;padding:4px 8px;text-align:center}
