@@ -125,6 +125,13 @@ test("Supun branch → GRN → customer delivery → return → audit history", 
     assert.equal(bulkItem.productId,"10095");
     assert.equal(bulkItem.stock,12);
     assert.equal(bulkState.categories.find(x=>x.name==="Air Conditioners").active,1);
+    const reusedCategory=await previewExcel(buildInventoryTemplate([{
+      id:"10095",sku:"BULK-AC",name:"CAMY Test AC",category:"  air   conditioners  ",
+      supplierName:"Supun Central",unit:"pieces",stock:12,cost:900,sell:1200
+    }]));
+    assert.equal(reusedCategory.summary.categoryCount,0);
+    assert.equal(reusedCategory.rows[0].category,"Air Conditioners");
+    assert.equal(reusedCategory.rows[0].action,"unchanged");
     const twice=await previewExcel(inventoryFile);
     assert.equal(twice.summary.newCount,0);
     assert.equal(twice.summary.updateCount,0);

@@ -6,7 +6,9 @@ import { buildInventoryTemplate, parseInventoryUpload } from "./po-excel.js";
 
 export function registerInventoryImportRoutes(app,h){
   const {db,express,requireEdit,run,transaction,check,changeStock,logStock}=h;
-  const normalize=value=>String(value??"").trim().toLocaleLowerCase("en");
+  // Category and supplier names come from user-edited spreadsheets. Treat
+  // differences in case and repeated whitespace as the same saved name.
+  const normalize=value=>String(value??"").normalize("NFKC").trim().replace(/\s+/gu," ").toLocaleLowerCase("en");
   const moneyEqual=(a,b)=>Math.abs(Number(a)-Number(b))<0.005;
   const snapshot=p=>p?{
     id:p.id,companyProductId:p.company_product_id||String(p.id),name:p.name,sku:p.sku||"",category:p.category,
@@ -184,10 +186,18 @@ export function registerInventoryImportRoutes(app,h){
       .run(batchFingerprint,req.user.id,created,updated,delta,JSON.stringify([...changed.map(p=>({...toPreview(p),before:p.previous})),...archived.map(p=>({id:p.id,name:p.name,action:"archive",before:p.previous}))])).lastInsertRowid;
     const reference="BULK-"+String(batchId).padStart(4,"0");
     const ensureCategory=db.prepare("SELECT id,name,active FROM product_categories WHERE name=? COLLATE NOCASE");
+    const savedCategories=()=>db.prepare("SELECT id,name,active FROM product_categories ORDER BY id").all();
     for(const item of changed){
-      const found=ensureCategory.get(item.category);
-      if(!found)db.prepare("INSERT INTO product_categories(name) VALUES(?)").run(item.category);
-      else if(!found.active)db.prepare("UPDATE product_categories SET active=1 WHERE id=?").run(found.id);
+      // Resolve again at commit time so a category created after preview, or
+      // one whose spacing/case differs, is reused instead of duplicated.
+      let found=savedCategories().find(category=>normalize(category.name)===normalize(item.category));
+      if(!found){
+        const id=db.prepare("INSERT INTO product_categories(name) VALUES(?)").run(item.category).lastInsertRowid;
+        found={id,name:item.category,active:1};
+      }else if(!found.active){
+        db.prepare("UPDATE product_categories SET active=1 WHERE id=?").run(found.id);
+      }
+      item.category=found.name;
       if(item.action==="new"){
         const p=db.prepare("INSERT INTO products(name,sku,category,emoji,supplier_id,unit,cost,sale_price,stock,reorder) VALUES(?,?,?,'📦',?,?,?,?,?,5)")
           .run(item.name,item.sku,item.category,item.sid,item.unit,item.cost,item.sell,item.qty).lastInsertRowid;
