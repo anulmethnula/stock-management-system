@@ -7,6 +7,7 @@
     "start": "vite build && node server/server.js",
     "dev": "concurrently \"node server/server.js\" \"vite\"",
     "build": "vite build",
+    "migrate:hosting": "node database/migrate-for-hosting.mjs",
     "test": "node --test tests/po-excel.test.mjs tests/smoke.mjs"
   },
   "dependencies": {

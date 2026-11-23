@@ -60,7 +60,14 @@ Administrators can download a consistent database snapshot from **Staff → Down
 
 ## Updating later
 
-Back up the production database first. Replace the application files but keep `/var/lib/stockeasy/stockeasy.db`, then run:
+Back up the production database first. Replace the application files but keep `/var/lib/stockeasy/stockeasy.db`. For the product-ID/database update, stop the app and run the included idempotent migration file against the production database:
+
+```bash
+pm2 stop stockeasy
+npm run migrate:hosting -- /var/lib/stockeasy/stockeasy.db
+```
+
+The migration creates a timestamped `.bak` file beside the database before changing anything. Keep that backup until the updated site has been checked. Then install production dependencies and restart:
 
 ```bash
 npm ci --omit=dev
